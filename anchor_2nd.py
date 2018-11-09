@@ -122,8 +122,8 @@ def pos_neg_iou(pos_overlap, neg_overlap, all_anchors, GT):
 def compute_gt_annotations(
     anchors,
     annotations,
-    negative_overlap=0.4,
-    positive_overlap=0.5
+    negative_overlap=0.1,
+    positive_overlap=0.2
 ):
     """ 计算anchor和GT的IoU获取正负样本，以及与GT有最高IoU那个anchor
 
@@ -199,8 +199,8 @@ def anchor_targets_bbox(
     image_group,
     annotations_group,
     num_classes,
-    negative_overlap=0.4,  #
-    positive_overlap=0.5  # small
+    negative_overlap=0.0,  #
+    positive_overlap=0.1  # small
 ):
     """ 生成一个batch中边框分类和回归的目标
 
@@ -253,7 +253,7 @@ def anchor_targets_bbox(
         # 按照1:3 正负样本比启发式采样
         postive_num = np.sum(labels_batch[index, :, -1] == 1)
         for i in np.random.randint(0, anchors.shape[0], 3 * postive_num):
-            if not labels_batch[index, :, -1] == 1:
+            if not (labels_batch[index, :, -1]-1).all():
                 labels_batch[index, i, -1] = 0   # 设为背景类
                 regression_batch[index, i, -1] = 0
 

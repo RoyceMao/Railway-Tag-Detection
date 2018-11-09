@@ -77,7 +77,7 @@ def train():
         input_shape_img = (None, None, 3)
 
     img_input = Input(shape=input_shape_img)
-    small_img_input = Input(shape=(80, 40, 3))
+    small_img_input = Input(shape=(40, 20, 3))
 
     # 定义基础网络
     shared_layers = nn.nn_base(img_input, trainable=True)
@@ -87,7 +87,7 @@ def train():
     rpn = nn.rpn(shared_layers, num_anchors)
 
     # 定义后续分类网络的输出
-    classifier = stage_2_net(len(classes_count), small_img_input, height=80, width=40)
+    classifier = stage_2_net(len(classes_count), small_img_input, height=40, width=20)
 
     model_rpn = Model(img_input, rpn[:2])
     model_classifier = Model(small_img_input, classifier)
@@ -131,7 +131,7 @@ def train():
         print('Epoch {}/{}'.format(epoch_num + 1, num_epochs))
 
         while True:
-            try:
+            #try:
                 # 当完成一轮epoch时，计算epoch_length个rpn_accuracy的均值，输出相关信息，如果均值为0，则提示出错
                 if len(rpn_accuracy_rpn_monitor) == epoch_length and cfg.verbose:
                     mean_overlapping_bboxes = float(sum(rpn_accuracy_rpn_monitor)) / len(rpn_accuracy_rpn_monitor)
@@ -176,9 +176,10 @@ def train():
                 num_labels = pic_num_label(rs_pic, rs_boxes, rs_wh, annos_np[np.newaxis, :, :])
                 # ==============================================================================
                 # 生成第二阶段的训练数据
+                # ==============================================================================
                 batch_size = len(num_labels[0])
                 base_anchors = anchors_generation(2.5, [1], [1])
-                all_anchors = sliding_anchors_all((20,10), (4, 4), base_anchors)
+                all_anchors = sliding_anchors_all((10,5), (4, 4), base_anchors)
                 labels_batch, regression_batch, boxes_batch, inds, pos_inds = anchor_targets_bbox(all_anchors, rs_pic[0], num_labels[0],
                                                                                   len(class_mapping))
                 X1 = rs_pic[0] # tf.tensor转换为numpy
@@ -188,7 +189,7 @@ def train():
                 rpn_accuracy_rpn_monitor.append(len(inds))
                 rpn_accuracy_for_epoch.append((len(inds)))
                 # 训练分类网络
-                loss_class = model_classifier.train_on_batch(X1,[labels_batch[:, inds, :], regression_batch[:, pos_inds, :]])
+                loss_class = model_classifier.train_on_batch(X1,[labels_batch[inds, :], regression_batch[pos_inds, :]])
 
                 # 统计loss
                 losses[iter_num, 0] = loss_rpn[1]
@@ -239,13 +240,14 @@ def train():
                         model_all.save_weights(cfg.model_path)
 
                     break
-
+'''
             except Exception as e:
                 print('Exception: {}'.format(e))
                 # save model
                 model_all.save_weights(cfg.model_path)
                 continue
-    print('Training complete, exiting.')
+'''
+print('Training complete, exiting.')
 
 
 if __name__ == '__main__':

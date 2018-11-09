@@ -27,8 +27,9 @@ def props_pic(proposals, all_tag_annos, all_imgs):
         rs_pic_single = []
         rs_boxes_single = []
         # 统一resize到（80，40，3）
-        width_mean = 40
-        height_mean = 80
+        width_mean = 20
+        height_mean = 40
+        print('号码牌tag与10个proposals的overlap得分，并筛选出有交集的proposals：')
         for prop in proposals[i]:
             prop = prop[np.newaxis, :]
             # 首先寻找与tag框有交集的proposals，然后取两者交集区域的上下限作为crops的图像
@@ -46,7 +47,7 @@ def props_pic(proposals, all_tag_annos, all_imgs):
                 rs_boxes_single.append([x1, y1, x2, y2])
         rs_pic.append(rs_pic_single)
         rs_boxes.append(rs_boxes_single)
-        rs_wh.append([width_mean, height_mean])
+        rs_wh.append([height_mean, width_mean])
     return rs_pic, rs_boxes, rs_wh
 
 def pic_num_label(rs_pic, rs_boxes, rs_wh, all_num_annos):
