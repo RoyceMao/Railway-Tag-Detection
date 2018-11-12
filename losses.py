@@ -61,6 +61,15 @@ def rpn_loss_cls(num_anchors):
     return rpn_loss_cls_fixed_num
 
 
+def class_loss_cls(y_true, y_pred): # 不用改
+    """
+    计算分类网络的分类误差
+    :param y_true: ground truth, shape(1,selected boxes,21)
+    :param y_pred: 预测类别得分, shape(1,selected boxes,21)
+    :return:
+    """
+    return lambda_cls_class * K.mean(categorical_crossentropy(y_true[0, :, :], y_pred[0, :, :]))
+
 def class_loss_regr(num_classes):
     """
     计算分类网络的回归误差
@@ -78,12 +87,3 @@ def class_loss_regr(num_classes):
         return lambda_cls_regr * K.sum(y_true[:, :, :4*num_classes] * (x_bool * (0.5 * x * x) + (1 - x_bool) * (x_abs - 0.5))) / K.sum(epsilon + y_true[:, :, :4*num_classes])
     return class_loss_regr_fixed_num
 
-
-def class_loss_cls(y_true, y_pred):
-    """
-    计算分类网络的分类误差
-    :param y_true: ground truth, shape(1,selected boxes,21)
-    :param y_pred: 预测类别得分, shape(1,selected boxes,21)
-    :return:
-    """
-    return lambda_cls_class * K.mean(categorical_crossentropy(y_true[0, :, :], y_pred[0, :, :]))

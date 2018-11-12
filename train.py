@@ -17,8 +17,6 @@ import resnet as nn
 from simple_parser import get_data
 from props_pic_2nd import props_pic, pic_num_label
 from anchor_2nd import anchors_generation, sliding_anchors_all, pos_neg_iou, anchor_targets_bbox
-from loss_function_2nd import focal_post, smooth_l1
-from metrics_2nd import sample_accuracy, accuracy
 from net_design_2nd import stage_2_net
 
 
@@ -37,7 +35,6 @@ def train():
     # 读取VOC图片数据
     print('======== 读取图片信息 ========')
     all_images, classes_count, class_mapping = get_data(cfg.simple_label_file)
-
     # 增加背景类（若没有）
     if 'bg' not in classes_count:
         classes_count['bg'] = 0
@@ -129,7 +126,7 @@ def train():
     for epoch_num in range(num_epochs):
         progbar = generic_utils.Progbar(epoch_length)
         print('Epoch {}/{}'.format(epoch_num + 1, num_epochs))
-
+        n = 1
         while True:
             #try:
                 # 当完成一轮epoch时，计算epoch_length个rpn_accuracy的均值，输出相关信息，如果均值为0，则提示出错
@@ -174,22 +171,42 @@ def train():
                     annos_list[4].append(img_data['bboxes'][i]['class'])
                 annos_np = np.concatenate((np.array(annos_list[0])[np.newaxis, :],np.array(annos_list[1])[np.newaxis, :],np.array(annos_list[2])[np.newaxis, :],np.array(annos_list[3])[np.newaxis, :],np.array(annos_list[4])[np.newaxis, :]), axis=0).T
                 num_labels = pic_num_label(rs_pic, rs_boxes, rs_wh, annos_np[np.newaxis, :, :])
+
                 # ==============================================================================
                 # 生成第二阶段的训练数据
                 # ==============================================================================
                 batch_size = len(num_labels[0])
-                base_anchors = anchors_generation(2.5, [1], [1])
+                base_anchors = anchors_generation(2.5, [1], [0.5**(1.0/3.0),1,2 ** (1.0/2.0)])
                 all_anchors = sliding_anchors_all((10,5), (4, 4), base_anchors)
                 labels_batch, regression_batch, boxes_batch, inds, pos_inds = anchor_targets_bbox(all_anchors, rs_pic[0], num_labels[0],
-                                                                                  len(class_mapping))
-                X1 = rs_pic[0] # tf.tensor转换为numpy
-                Y1 = [labels_batch, regression_batch]
+                                                                                  len(class_mapping)-1)
+                x1 = rs_pic[0] # tf.tensor转换为numpy
+                # Y1 = [labels_batch, regression_batch]
 
                 # 区分训练过程中计算loss的anchors样本，并提取非背景类的anchors索引
-                rpn_accuracy_rpn_monitor.append(len(inds))
-                rpn_accuracy_for_epoch.append((len(inds)))
+                rpn_accuracy_rpn_monitor.append(len(inds[0]))
+                rpn_accuracy_for_epoch.append(len(inds[0]))
+
                 # 训练分类网络
-                loss_class = model_classifier.train_on_batch(X1,[labels_batch[inds, :], regression_batch[pos_inds, :]])
+                # y1目标数据
+                labels_batch[:, inds[0], -1] = np.abs(labels_batch[:, inds[0], -1] - 1)
+                y1 = labels_batch[:, inds[0], :]
+                print('batch_{}第2阶段正负样本数量：{}'.format(n, len(y1[0])))
+                # y2目标数据
+                tmp = np.zeros((len(y1[0]), 4 * (len(classes_count) - 1)))
+                for i in range(len(y1[0])):
+                    a = np.zeros(4 * (len(classes_count) - 1))
+                    # print(labels_batch[:, inds[0], -1]) # 没有正样本
+                    if labels_batch[:, inds[0], -1][0][i] == 0:
+                        label_index = list(labels_batch[:, inds[0], :(len(classes_count)-1)][0][i]).index(1)
+                        a[4 * label_index: 4 * label_index + 4] = regression_batch[:, inds[0], :4][0][i]
+                    tmp[i] = a
+                # 合并为list（3维）
+                y2 = np.concatenate([np.repeat(y1[:, :, :(len(classes_count) - 1)], 4, axis=2), tmp[np.newaxis, :, :]], axis=2)
+                print(x1.shape)
+                print(y1.shape)
+                print(y2.shape)
+                loss_class = model_classifier.train_on_batch(x1,[y1, y2])
 
                 # 统计loss
                 losses[iter_num, 0] = loss_rpn[1]
@@ -204,7 +221,7 @@ def train():
                                [('rpn_cls', np.mean(losses[:iter_num, 0])), ('rpn_regr', np.mean(losses[:iter_num, 1])),
                                 ('detector_cls', np.mean(losses[:iter_num, 2])),
                                 ('detector_regr', np.mean(losses[:iter_num, 3]))])
-
+                n += 1
                 # 如果一个epoch结束，输出各个部分的平均误差
                 if iter_num == epoch_length:
                     loss_rpn_cls = np.mean(losses[:, 0])

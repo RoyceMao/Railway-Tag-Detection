@@ -200,7 +200,7 @@ def anchor_targets_bbox(
     annotations_group,
     num_classes,
     negative_overlap=0.0,  #
-    positive_overlap=0.1  # small
+    positive_overlap=0.1   # small
 ):
     """ 生成一个batch中边框分类和回归的目标
 
@@ -252,7 +252,7 @@ def anchor_targets_bbox(
 
         # 按照1:3 正负样本比启发式采样
         postive_num = np.sum(labels_batch[index, :, -1] == 1)
-        for i in np.random.randint(0, anchors.shape[0], 3 * postive_num):
+        for i in np.random.randint(0, anchors.shape[0], 2 * postive_num):
             if not (labels_batch[index, :, -1]-1).all():
                 labels_batch[index, i, -1] = 0   # 设为背景类
                 regression_batch[index, i, -1] = 0
@@ -260,13 +260,7 @@ def anchor_targets_bbox(
         # 忽略的
         labels_batch[index, ignore_indices, -1] = -1
         regression_batch[index, ignore_indices, -1] = -1
-        # 越界边框忽略
-        if image.shape:
-            anchors_centers = np.vstack([(anchors[:, 0] + anchors[:, 2]) / 2, (anchors[:, 1] + anchors[:, 3]) / 2]).T
-            indices = np.logical_or(anchors_centers[:, 0] >= image.shape[1], anchors_centers[:, 1] >= image.shape[0])
 
-            labels_batch[index, indices, -1] = - 1
-            regression_batch[index, indices, -1] = -1
     # 返回_batch数组中，对应样本的下标索引
     inds = (labels_batch[:, :, -1] != -1) # 所有正负样本（排除背景样本）
     pos_inds = (labels_batch[:, :, -1] == 1) # 所有正样本（排除非正样本）
@@ -275,5 +269,10 @@ def anchor_targets_bbox(
         print("post_num:{},bg_num:{},ignore_num:{}".format(np.sum(labels_batch[:, :, -1] == 1),
                                                            np.sum(labels_batch[:, :, -1] == 0),
                                                            np.sum(labels_batch[:, :, -1] == -1)))
-
+    '''
+    # batch打平
+    inds = inds.ravel()
+    labels_batch = labels_batch.reshape(batch_size*anchors.shape[0], num_classes + 1)[np.newaxis, :, :]
+    regression_batch = regression_batch.reshape(batch_size*anchors.shape[0], 4 + 1)[np.newaxis, :, :]
+    '''
     return labels_batch, regression_batch, boxes_batch, inds, pos_inds
