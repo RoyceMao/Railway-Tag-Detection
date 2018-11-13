@@ -4,6 +4,7 @@ import time
 import os
 import numpy as np
 import pickle
+import tensorflow as tf
 from keras import backend as K
 from keras.optimizers import Adam
 from keras.layers import Input
@@ -122,13 +123,14 @@ def train():
     best_loss = np.Inf
 
     iter_num = 0
+    sess = tf.Session()
     print('\n======== 开始训练 ========')
     for epoch_num in range(num_epochs):
         progbar = generic_utils.Progbar(epoch_length)
         print('Epoch {}/{}'.format(epoch_num + 1, num_epochs))
         n = 1
         while True:
-            #try:
+            try:
                 # 当完成一轮epoch时，计算epoch_length个rpn_accuracy的均值，输出相关信息，如果均值为0，则提示出错
                 if len(rpn_accuracy_rpn_monitor) == epoch_length and cfg.verbose:
                     mean_overlapping_bboxes = float(sum(rpn_accuracy_rpn_monitor)) / len(rpn_accuracy_rpn_monitor)
@@ -160,7 +162,7 @@ def train():
                 y2_tag = img_data['outer_boxes'][0]['y2'] // 1.8
                 cls_tag = img_data['outer_boxes'][0]['class']
                 # rs_pic是保留下来的crop图像，rs_wh是每张原图crop出的多个rs_pic，对应的统一长、宽
-                rs_pic, rs_boxes, rs_wh = props_pic(result[np.newaxis, :, :], [[x1_tag, y1_tag, x2_tag, y2_tag, cls_tag]], X[np.newaxis, :, :, :])
+                rs_pic, rs_boxes, rs_wh = props_pic(sess, result[np.newaxis, :, :], [[x1_tag, y1_tag, x2_tag, y2_tag, cls_tag]], X[np.newaxis, :, :, :])
                 # 定义第2阶段crops后的号码牌数字标签坐标与原数字标签坐标之间的关系
                 annos_list = [[],[],[],[],[]]
                 for i in range(len(img_data['bboxes'])):
@@ -190,22 +192,20 @@ def train():
                 # 训练分类网络
                 # y1目标数据
                 labels_batch[:, inds[0], -1] = np.abs(labels_batch[:, inds[0], -1] - 1)
-                y1 = labels_batch[:, inds[0], :]
-                print('batch_{}第2阶段正负样本数量：{}'.format(n, len(y1[0])))
+                labels_batch[:, :, -1] = np.abs(labels_batch[:, :, -1])
+                y1 = labels_batch[:, :, :]
                 # y2目标数据
-                tmp = np.zeros((len(y1[0]), 4 * (len(classes_count) - 1)))
-                for i in range(len(y1[0])):
+                tmp = np.zeros((len(inds[0]), 4 * (len(classes_count) - 1)))
+                for i in range(len(inds[0])):
                     a = np.zeros(4 * (len(classes_count) - 1))
                     # print(labels_batch[:, inds[0], -1]) # 没有正样本
-                    if labels_batch[:, inds[0], -1][0][i] == 0:
-                        label_index = list(labels_batch[:, inds[0], :(len(classes_count)-1)][0][i]).index(1)
-                        a[4 * label_index: 4 * label_index + 4] = regression_batch[:, inds[0], :4][0][i]
+                    if labels_batch[:, :, -1][0][i] == 0:
+                        label_index = list(labels_batch[:, :, :(len(classes_count)-1)][0][i]).index(1)
+                        a[4 * label_index: 4 * label_index + 4] = regression_batch[:, :, :4][0][i]
                     tmp[i] = a
                 # 合并为list（3维）
-                y2 = np.concatenate([np.repeat(y1[:, :, :(len(classes_count) - 1)], 4, axis=2), tmp[np.newaxis, :, :]], axis=2)
-                print(x1.shape)
-                print(y1.shape)
-                print(y2.shape)
+                y2 = np.concatenate([np.repeat(labels_batch[:, :, :(len(classes_count) - 1)], 4, axis=2), tmp[np.newaxis, :, :]], axis=2)
+                np.savetxt('regr目标.txt', 1)
                 loss_class = model_classifier.train_on_batch(x1,[y1, y2])
 
                 # 统计loss
@@ -213,7 +213,6 @@ def train():
                 losses[iter_num, 1] = loss_rpn[2]
                 losses[iter_num, 2] = loss_class[1]
                 losses[iter_num, 3] = loss_class[2]
-                losses[iter_num, 4] = loss_class[3]
 
                 # 更新进度条
                 iter_num += 1
@@ -228,7 +227,6 @@ def train():
                     loss_rpn_regr = np.mean(losses[:, 1])
                     loss_class_cls = np.mean(losses[:, 2])
                     loss_class_regr = np.mean(losses[:, 3])
-                    class_acc = np.mean(losses[:, 4])
 
                     mean_overlapping_bboxes = float(sum(rpn_accuracy_for_epoch)) / len(rpn_accuracy_for_epoch)
                     rpn_accuracy_for_epoch = []
@@ -237,7 +235,6 @@ def train():
                     if cfg.verbose:
                         print('Mean number of bounding boxes from RPN overlapping ground truth boxes: {}'.format(
                             mean_overlapping_bboxes))
-                        print('Classifier accuracy for bounding boxes from RPN: {}'.format(class_acc))
                         print('Loss RPN classifier: {}'.format(loss_rpn_cls))
                         print('Loss RPN regression: {}'.format(loss_rpn_regr))
                         print('Loss Detector classifier: {}'.format(loss_class_cls))
@@ -257,14 +254,13 @@ def train():
                         model_all.save_weights(cfg.model_path)
 
                     break
-'''
+
             except Exception as e:
                 print('Exception: {}'.format(e))
                 # save model
                 model_all.save_weights(cfg.model_path)
                 continue
-'''
-print('Training complete, exiting.')
+    print('Training complete, exiting.')
 
 
 if __name__ == '__main__':

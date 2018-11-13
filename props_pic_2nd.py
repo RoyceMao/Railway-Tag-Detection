@@ -11,7 +11,7 @@ import keras.backend as K
 from overlap_2nd import overlap
 import numpy as np
 
-def props_pic(proposals, all_tag_annos, all_imgs):
+def props_pic(sess, proposals, all_tag_annos, all_imgs):
     """
     RPN网络生成的proposals映射回原图，进行第2阶段的输入crops。
     :param proposals: （batch_size，num_rois，4）
@@ -41,7 +41,6 @@ def props_pic(proposals, all_tag_annos, all_imgs):
                 x1 = np.min((prop[0][0], all_tag_annos[i][0]))
                 x2 = np.max((prop[0][2], all_tag_annos[i][2]))
                 a = tf.image.crop_and_resize(img, [[y1,x1,y2,x2]], box_ind=[0], crop_size=[height_mean, width_mean])
-                sess = tf.Session()
                 b = a.eval(session=sess)
                 rs_pic_single = b
                 # rs_pic_single.append(img.crop([img.size[0] / 4, img.size[1] / 4, img.size[0] * 3 / 4, img.size[1] * 3 / 4]))
