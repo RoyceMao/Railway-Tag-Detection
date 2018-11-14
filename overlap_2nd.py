@@ -50,4 +50,4 @@ if __name__ == "__main__":
     print(boxes)
     query_boxes = np.ndarray(shape=(3,4), dtype=int, buffer=np.array([1,2,3,4,5,6,7,8,9,10,11,12]), offset=0, order="C")
     print(query_boxes)
-    print(overlap(boxes,query_boxes).shape)
+    print(overlap(boxes,query_boxes))

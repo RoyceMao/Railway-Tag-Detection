@@ -33,11 +33,11 @@ def stage_2_net(nb_classes, input_tensor, height=40, width=20):
     concat = concatenate([conv1, pool2, pool3])
 
     # 接上cls输出层
-    classification = Convolution2D(filters=height * width * 3 * nb_classes // 800, kernel_size=3, padding='same')(concat)
+    classification = Convolution2D(filters=height * width * 4 * nb_classes // 800, kernel_size=3, padding='same')(concat)
     classification = Reshape(target_shape=(-1, nb_classes))(classification)
     classification = Activation(activation='softmax', name='classification')(classification)
     # 接上regr输出层
-    bboxes_regression = Convolution2D(filters=height * width * 3 * 4 // 80, kernel_size=3, padding='same')(concat)
+    bboxes_regression = Convolution2D(filters=height * width * 4 * 4 // 80, kernel_size=3, padding='same')(concat)
     bboxes_regression = Reshape(target_shape=(-1, 4*(nb_classes-1)), name='regression')(bboxes_regression)
     '''
     # 接上cls输出层

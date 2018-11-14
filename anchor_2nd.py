@@ -174,8 +174,8 @@ def bbox_transform(anchors, gt_boxes):
     # 计算回归目标(中心点偏移，以及长、宽缩放)
     targets_dx = (gt_x_center - anchors_x_center) / anchor_widths
     targets_dy = (gt_y_center - anchors_y_center) / anchor_heights
-    targets_dw = np.log(gt_widths / anchor_widths)
-    targets_dh = np.log(gt_heights / anchor_heights) # gt_heights有可能因为resize的缘故，变为0
+    targets_dw = np.log(gt_widths / (anchor_widths + 1))
+    targets_dh = np.log(gt_heights / (anchor_heights + 1)) # gt_heights有可能因为resize的缘故，变为0
     # 规范化
     targets = np.stack((targets_dx, targets_dy, targets_dw, targets_dh))
     targets = targets.T
@@ -187,8 +187,8 @@ def anchor_targets_bbox(
     image_group,
     annotations_group,
     num_classes,
-    negative_overlap=0.0,  #
-    positive_overlap=0.1   # small
+    negative_overlap=0.1,  #
+    positive_overlap=0.5   # small
 ):
     """ 生成一个batch中边框分类和回归的目标
 
@@ -240,6 +240,7 @@ def anchor_targets_bbox(
 
         # 按照1:3 正负样本比启发式采样
         postive_num = np.sum(labels_batch[index, :, -1] == 1)
+        print(postive_num)
         for i in np.random.randint(0, anchors.shape[0], 2 * postive_num):
             if not (labels_batch[index, :, -1]-1).all():
                 labels_batch[index, i, -1] = 0   # 设为背景类
