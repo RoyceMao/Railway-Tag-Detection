@@ -28,7 +28,7 @@ import matplotlib.pyplot as plt
 np.set_printoptions(threshold=np.inf)
 
 
-def data_gen_stage_2(result, img_data, sess, X, class_mapping, classes_count, num_width, num_height, iter_num):
+def data_gen_stage_2(result, img_data, sess, X, class_mapping, classes_count, iter_num):
     """
     根据1阶段的一个batch（1张）图片处理结果，生成第2阶段的训练数据
     :param result: 
@@ -70,15 +70,16 @@ def data_gen_stage_2(result, img_data, sess, X, class_mapping, classes_count, nu
     batch_size = len(rs_pic[0])  # 一次5张crops图
     base_anchors = anchors_generation(8, [0.5 ** (1.0 / 3.0), 1, 2 ** (1.0 / 2.0)],
                                       [1,2 ** (1.0/3.0),2 ** (1.0/2.0),2])
-    all_anchors = sliding_anchors_all((20, 10), (4, 4), base_anchors)
+    all_anchors = sliding_anchors_all((10, 20), (4, 4), base_anchors)
     #================================================================
+    '''
     # 测试部分：计算当前anchor与当前gt-box的iou，以及框住gt的proposals生成的anchors是否覆盖了所有的小gt
     from overlap_2nd import overlap
     if gt_index != [[]]:
         for gt in rs_num_gt_pic[0][gt_index[0][0]]:
             num_width.append(gt[2]-gt[0])
             num_height.append(gt[3]-gt[1])
-    '''
+    
         # 打印Top-5的最高IOU值
         for anchor in all_anchors:
             for gt in  rs_num_gt_pic[0][gt_index[0][0]]:
@@ -93,13 +94,15 @@ def data_gen_stage_2(result, img_data, sess, X, class_mapping, classes_count, nu
     labels_batch, regression_batch, boxes_batch, inds, pos_inds = anchor_targets_bbox(all_anchors, rs_pic[0],
                                                                                       rs_num_gt_pic[0],
                                                                                       len(class_mapping) - 1)
-
+    '''
+    # 测试部分：输出第2阶段小图片的正样本anchors情况
     for i, num_gt in enumerate(rs_num_gt_pic[0]):
         if i in gt_index[0]:
             draw_imgs = draw_boxes_and_label_on_image(rs_pic[0][i],
                                                       {1: all_anchors[inds[i]]}) # , {1: num_gt}
             cv2.imwrite('./output_test/Pic{}_Prop{}.png'.format(iter_num, i),
                         draw_imgs)
+    '''
     #============================================================
     #============================================================
     x1 = rs_pic[0]  # tf.tensor转换为numpy
@@ -140,7 +143,7 @@ def data_gen_stage_2(result, img_data, sess, X, class_mapping, classes_count, nu
     y2 = np.concatenate([np.repeat(labels_batch[:, :, :(len(classes_count) - 1)], 4, axis=2), tmp], axis=2)
     del x1_tag,y1_tag,x2_tag,y2_tag,cls_tag,annos_list,annos_np,rs_pic,rs_boxes,rs_num_gt_pic,rs_wh,gt_index,labels_batch,regression_batch,boxes_batch,inds,pos_inds,tmp
     gc.collect()
-    return np.array(x1), [y1,y2], num_width, num_height
+    return np.array(x1), [y1,y2]
 
 
 def train():
@@ -170,7 +173,7 @@ def train():
     print('类别数量：{}'.format(len(classes_count)))
 
     # # 打乱图片顺序
-    random.shuffle(all_images)
+    # random.shuffle(all_images)
 
     # 分配训练集和测试
     train_imgs = [s for s in all_images if s['imageset'] == 'trainval']
@@ -227,7 +230,7 @@ def train():
 
     # 编译模型
     optimizer = Adam(lr=1e-5)
-    optimizer_classifier = Adam(lr=1e-4)
+    optimizer_classifier = Adam(lr=1e-3)
     model_rpn.compile(optimizer=optimizer,
                       loss=[losses_fn.rpn_loss_cls(num_anchors), losses_fn.rpn_loss_regr(num_anchors)])
     model_classifier.compile(optimizer=optimizer_classifier,
@@ -236,8 +239,8 @@ def train():
     model_all.compile(optimizer='sgd', loss='mae')
 
     # 设置一些训练参数
-    epoch_length = 900
-    num_epochs = 1
+    epoch_length = 180
+    num_epochs = 2
     losses = np.zeros((epoch_length, 5))
     rpn_accuracy_rpn_monitor = []
     rpn_accuracy_for_epoch = []
@@ -245,10 +248,6 @@ def train():
     best_loss = np.Inf
     iter_num = 0
     sess = tf.Session()
-
-    #================测试参数
-    num_width = []
-    num_height = []
 
     print('\n======== 开始训练 ========')
     for epoch_num in range(num_epochs):
@@ -279,7 +278,7 @@ def train():
                                                 overlap_thresh=0.7,
                                                 max_boxes=5)
                 # 训练2阶段的classifier
-                x, y, num_width, num_height = data_gen_stage_2(result, img_data, sess, X, class_mapping, classes_count, num_width, num_height, iter_num)
+                x, y = data_gen_stage_2(result, img_data, sess, X, class_mapping, classes_count, iter_num)
                 loss_class = model_classifier.train_on_batch(x, y)
                 # 删除中间参数，释放内存
                 del X, Y, img_data, P_rpn, result, x, y
@@ -319,7 +318,7 @@ def train():
                     curr_loss = loss_class_cls + loss_class_regr
                     iter_num = 0
                     start_time = time.time()
-
+                    '''
                     # 1个epoch所有图片proposals区域，正样本anchors的高、宽趋势可视化
                     x = range(len(num_width))
                     y1 = num_width
@@ -328,6 +327,7 @@ def train():
                     plt.plot(x, y2, marker='*', color='b')
                     # plt.show()
                     # plt.savefig('plot.png',format='png')
+                    '''
                     # 如果当前损失最小，则保存当前的参数
                     if curr_loss < best_loss:
                         if cfg.verbose:
@@ -343,7 +343,6 @@ def train():
                 model_all.save_weights(cfg.model_path)
                 continue
 '''
-
 
 if __name__ == '__main__':
     train()
