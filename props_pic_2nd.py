@@ -30,8 +30,8 @@ def props_pic(sess, proposals, all_tag_annos, all_num_annos, all_imgs):
         rs_num_gt_single = [] # 单独一张图片crop得到的区域，所对应的小数字标注
         gt_index_single = []
         # 统一resize到（80，40，3）
-        width_mean = 20
-        height_mean = 40
+        width_mean = 40
+        height_mean = 80
         # 保留得分前5的proposals
         rs_boxes_single = proposals[i]
         # 把所有保存的proposals做padding（这里直接做长宽扩充）
@@ -69,7 +69,7 @@ def props_pic(sess, proposals, all_tag_annos, all_num_annos, all_imgs):
             rs_num_gt_single.append(num_labels)
         # 然后再统一进行对应区域图片数据的crops
         for j, prop in enumerate(rs_boxes_single): # prop[1],prop[0],prop[3],prop[2]
-            a = tf.image.crop_and_resize(img, [[prop[1],prop[0],prop[3],prop[2]]], box_ind=[0], crop_size=[height_mean, width_mean])
+            a = tf.image.crop_and_resize(img, [[prop[1]/600,prop[0]/1066,prop[3]/600,prop[2]/1066]], box_ind=[0], crop_size=[height_mean, width_mean])
             b = a.eval(session=sess)
             rs_pic_single.append(b[0])
                 # rs_pic_single.append(img.crop([img.size[0] / 4, img.size[1] / 4, img.size[0] * 3 / 4, img.size[1] * 3 / 4]))

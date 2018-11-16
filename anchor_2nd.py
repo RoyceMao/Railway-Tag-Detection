@@ -123,7 +123,7 @@ def compute_gt_annotations(
     anchors,
     annotations,
     negative_overlap=0.1,
-    positive_overlap=0.2
+    positive_overlap=0.5
 ):
     """ 计算anchor和GT的IoU获取正负样本，以及与GT有最高IoU那个anchor
 
@@ -147,7 +147,9 @@ def compute_gt_annotations(
     positive_indices = max_overlaps >= positive_overlap  # 正样本索引
     ignore_indices = (max_overlaps > negative_overlap) & ~positive_indices
 
-    return positive_indices, ignore_indices, argmax_overlaps_inds
+    # 获取没有被正样本涉及的GT索引
+    pos_gt_inds = argmax_overlaps_inds[positive_indices]
+    return positive_indices, ignore_indices, argmax_overlaps_inds, pos_gt_inds
 
 
 def bbox_transform(anchors, gt_boxes):
@@ -221,7 +223,7 @@ def anchor_targets_bbox(
     for index, (image, annotations) in enumerate(zip(image_group, annotations_group)):
         if annotations.shape[0]:
             # obtain indices of gt annotations with the greatest overlap
-            positive_indices, ignore_indices, argmax_overlaps_inds = compute_gt_annotations(anchors, annotations, negative_overlap, positive_overlap)
+            positive_indices, ignore_indices, argmax_overlaps_inds, pos_gt_inds = compute_gt_annotations(anchors, annotations, negative_overlap, positive_overlap)
             # 全部初始化为忽略
             labels_batch[index, :, -1] = -1
             labels_batch[index, positive_indices, -1] = 1
@@ -237,19 +239,19 @@ def anchor_targets_bbox(
             labels_batch[index, positive_indices, annotations[positive_indices, 4].astype(int)] = 1  # 赋值标记位
             # 计算回归目标
             regression_batch[index, :, :-1] = bbox_transform(anchors, annotations)
-
-        # 按照1:3 正负样本比启发式采样
+            # print(pos_gt_inds)
+        # 按照1:2 正负样本比启发式采样
         postive_num = np.sum(labels_batch[index, :, -1] == 1)
-        print(postive_num)
+        # print(postive_num)
         for i in np.random.randint(0, anchors.shape[0], 2 * postive_num):
             if not (labels_batch[index, :, -1]-1).all():
                 labels_batch[index, i, -1] = 0   # 设为背景类
                 regression_batch[index, i, -1] = 0
-
+        '''
         # 忽略的
         labels_batch[index, ignore_indices, -1] = -1
         regression_batch[index, ignore_indices, -1] = -1
-
+        '''
     # 返回_batch数组中，对应样本的下标索引
     inds = (labels_batch[:, :, -1] != -1) # 所有正负样本（排除背景样本）
     pos_inds = (labels_batch[:, :, -1] == 1) # 所有正样本（排除非正样本）
