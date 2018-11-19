@@ -24,9 +24,8 @@ from anchor_2nd import anchors_generation, sliding_anchors_all, pos_neg_iou, anc
 from net_design_2nd import stage_2_net
 import matplotlib as mpl
 mpl.use('agg')
-import matplotlib.pyplot as plt
-np.set_printoptions(threshold=np.inf)
-
+np.set_printoptions(threshold=np.inf) # 允许numpy数组的完全打印
+np.seterr(divide='ignore', invalid='ignore') # 不允许“divide”Warning相关信息的打印
 
 def data_gen_stage_2(result, img_data, sess, X, class_mapping, classes_count, iter_num):
     """
@@ -200,7 +199,7 @@ def train():
         input_shape_img = (None, None, 3)
 
     img_input = Input(shape=input_shape_img)
-    small_img_input = Input(shape=(80, 40, 3))
+    small_img_input = Input(shape=(80, 40, 3)) # 高为80，宽为40
 
     # 定义基础网络
     shared_layers = nn.nn_base(img_input, trainable=True)
@@ -247,7 +246,10 @@ def train():
     start_time = time.time()
     best_loss = np.Inf
     iter_num = 0
-    sess = tf.Session()
+    # 解决tensorflow初始化参数内存占满的问题
+    # config_tf = tf.ConfigProto()
+    # config_tf.gpu_options.allow_growth = True
+    sess = tf.Session() # config=config_tf
 
     print('\n======== 开始训练 ========')
     for epoch_num in range(num_epochs):

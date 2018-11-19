@@ -9,6 +9,9 @@ Created on 2018/11/6 17:20
 import tensorflow as tf
 import keras.backend as K
 from overlap_2nd import overlap
+from PIL import Image
+from keras.preprocessing.image import img_to_array
+import cv2
 import numpy as np
 
 def props_pic(sess, proposals, all_tag_annos, all_num_annos, all_imgs):
@@ -69,9 +72,17 @@ def props_pic(sess, proposals, all_tag_annos, all_num_annos, all_imgs):
             rs_num_gt_single.append(num_labels)
         # 然后再统一进行对应区域图片数据的crops
         for j, prop in enumerate(rs_boxes_single): # prop[1],prop[0],prop[3],prop[2]
+            # 这里涉及到张量的计算过程，而且位于循环体中，导致迭代过程中内存暴增
+            '''
             a = tf.image.crop_and_resize(img, [[prop[1]/600,prop[0]/1066,prop[3]/600,prop[2]/1066]], box_ind=[0], crop_size=[height_mean, width_mean])
             b = a.eval(session=sess)
-            rs_pic_single.append(b[0])
+            '''
+            # 所以，重新定义img的crops和resize的代码
+            image = Image.fromarray(img[0].astype('uint8')) # 必须加上.astype('uint8')
+            prop_crop = image.crop([prop[0], prop[1], prop[2], prop[3]])
+            prop_crop = img_to_array(prop_crop)
+            prop_pic = cv2.resize(prop_crop, (width_mean, height_mean)) # 图片标准化resize
+            rs_pic_single.append(prop_pic)
                 # rs_pic_single.append(img.crop([img.size[0] / 4, img.size[1] / 4, img.size[0] * 3 / 4, img.size[1] * 3 / 4]))
         rs_pic.append(rs_pic_single)
         rs_boxes.append(rs_boxes_single)
