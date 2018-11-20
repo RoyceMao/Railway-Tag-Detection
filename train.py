@@ -67,9 +67,9 @@ def data_gen_stage_2(result, img_data, sess, X, class_mapping, classes_count, it
     # 生成第二阶段的训练数据
     # ==============================================================================
     batch_size = len(rs_pic[0])  # 一次5张crops图
-    base_anchors = anchors_generation(8, [0.5 ** (1.0 / 3.0), 1, 2 ** (1.0 / 2.0)],
-                                      [1,2 ** (1.0/3.0),2 ** (1.0/2.0),2])
-    all_anchors = sliding_anchors_all((10, 20), (4, 4), base_anchors)
+    base_anchors = anchors_generation(10, [0.5 ** (1.0 / 3.0), 1, 2 ** (1.0 / 2.0)],
+                                      [0.5 ** (1.0 / 3.0),1,2 ** (1.0/3.0),2 ** (1.0/2.0),2])
+    all_anchors = sliding_anchors_all((5, 10), (8, 8), base_anchors)
     #================================================================
     '''
     # 测试部分：计算当前anchor与当前gt-box的iou，以及框住gt的proposals生成的anchors是否覆盖了所有的小gt
@@ -93,15 +93,15 @@ def data_gen_stage_2(result, img_data, sess, X, class_mapping, classes_count, it
     labels_batch, regression_batch, boxes_batch, inds, pos_inds = anchor_targets_bbox(all_anchors, rs_pic[0],
                                                                                       rs_num_gt_pic[0],
                                                                                       len(class_mapping) - 1)
-    '''
+
     # 测试部分：输出第2阶段小图片的正样本anchors情况
     for i, num_gt in enumerate(rs_num_gt_pic[0]):
         if i in gt_index[0]:
             draw_imgs = draw_boxes_and_label_on_image(rs_pic[0][i],
-                                                      {1: all_anchors[inds[i]]}) # , {1: num_gt}
+                                                      {1: all_anchors[pos_inds[i]]}) # , {1: num_gt}
             cv2.imwrite('./output_test/Pic{}_Prop{}.png'.format(iter_num, i),
                         draw_imgs)
-    '''
+
     #============================================================
     #============================================================
     x1 = rs_pic[0]  # tf.tensor转换为numpy
