@@ -1,7 +1,6 @@
 import cv2
 import numpy as np
 import pickle
-import time
 from keras import backend as K
 from keras.layers import Input
 from keras.models import Model
@@ -10,6 +9,10 @@ import argparse
 import os
 import resnet as nn
 from visualize import draw_boxes_and_label_on_image
+from net_design_2nd import stage_2_net_vgg
+from anchor_2nd import anchors_generation, sliding_anchors_all
+from PIL import Image
+from keras.preprocessing.image import img_to_array
 
 
 def format_img_size(img, cfg):
@@ -71,96 +74,136 @@ def predict_single_image(img_path, model_rpn, model_classifier, cfg, class_mappi
     :param class_mapping: 类别映射
     :return:
     """
-    st = time.time()
     img = cv2.imread(img_path)  # 读取图片
+
     if img is None:
         print('reading image failed.')
         exit(0)
+
+    # print(class_mapping)
 
     X, ratio = format_img(img, cfg)  # 预处理图片（缩放、变换维度）
     if K.image_dim_ordering() == 'tf':
         X = np.transpose(X, (0, 2, 3, 1))
 
     # 得到所有anchor的分类得分、回归参数以及feature map
-    [Y1, Y2, F] = model_rpn.predict(X)
+    Y1, Y2, F = model_rpn.predict(X)
 
-    # 得到proposals
-    result = roi_helpers.rpn_to_roi(Y1, Y2, cfg, K.image_dim_ordering(), overlap_thresh=0.7)
+    # 得到proposals (rois)
+    proposals = roi_helpers.rpn_to_roi(Y1, Y2, cfg, K.image_dim_ordering(), overlap_thresh=0.7, max_boxes=5)
 
-    # convert from (x1,y1,x2,y2) to (x1,y1,w,h)
-    result[:, 2] -= result[:, 0]
-    result[:, 3] -= result[:, 1]
+    rpn_outputs = []  # 存放proposals
 
-    bbox_threshold = 0.8
-    # 存放每个类别的所有边框
-    boxes = {}
-    # 按批处理rois，batch siez为32，“+1”是为了处理最后一个批次
-    for jk in range(result.shape[0] // cfg.num_rois + 1):
-        # 增加维度，shape(1,32,4)
-        rois = np.expand_dims(result[cfg.num_rois * jk:cfg.num_rois * (jk + 1), :], axis=0)
-        if rois.shape[1] == 0:
-            break
-        if jk == result.shape[0] // cfg.num_rois:
-            # 由于最后一个batch中roi的个数可能小于32，这里将填满到32个，
-            # 并将填充的部分用当前batch的第一个roi信息填充
-            curr_shape = rois.shape
-            target_shape = (curr_shape[0], cfg.num_rois, curr_shape[2])
-            rois_padded = np.zeros(target_shape).astype(rois.dtype)
-            rois_padded[:, :curr_shape[1], :] = rois
-            rois_padded[0, curr_shape[1]:, :] = rois[0, 0, :]
-            rois = rois_padded
+    score = 5
+    # 将proposal坐标从feature map映射回输入图片
+    for proposal in proposals:
+        rpn_outputs.append(
+            [cfg.rpn_stride * proposal[0], cfg.rpn_stride * proposal[1],
+             cfg.rpn_stride * proposal[2], cfg.rpn_stride * proposal[3], score])
+        score -= 1
 
-        # 得到当前batch类别预测得分和相应的回归参数
-        # p_cls(1,32,cls_nums+bg), p_regr(1,32,cls_nums*4)
-        p_cls, p_regr = model_classifier.predict([F, rois])
+    # for box in rpn_outputs:
+    # nms
+    boxes_nms = roi_helpers.non_max_suppression_fast(rpn_outputs, overlap_thresh=0.2)
+    rpn_outputs = boxes_nms
+    print("【RPN outputs】:")
+    for b in boxes_nms:
+        # 将坐标映射回原始图片
+        b[0], b[1], b[2], b[3] = get_real_coordinates(ratio, b[0], b[1], b[2], b[3])
+        print('coordinate:{} prob: {}'.format(b[0: 4], b[-1]))
 
-        # 遍历每个roi
+    # 将rois从原图中裁剪出来，并记录裁剪尺度和裁剪比例
+    image = Image.fromarray(img.astype('uint8'))
+    resized_width = 80
+    resized_height = 160
+    imgs_crop = []  # 存放裁剪后的图片
+    crop_scales = []  # 存放每个roi从原图中的裁剪尺度
+    crop_ratios = []  # 存放每个roi的缩放比
+    for roi in rpn_outputs:
+        w = roi[2] - roi[0]
+        h = roi[3] - roi[1]
+        ratio_w = resized_width / w
+        ratio_h = resized_height / h
+        crop_ratios.append([ratio_w, ratio_h])
+        crop_scales.append([round(roi[0]), round(roi[1])])
+        prop_crop = image.crop([roi[0], roi[1], roi[2], roi[3]])
+        prop_crop = img_to_array(prop_crop)
+        prop_pic = cv2.resize(prop_crop, (resized_width, resized_height))
+        imgs_crop.append(prop_pic)
+
+    base_anchors = anchors_generation(16, [0.5 ** (1.0 / 3.0), 1, 2 ** (1.0 / 3.0)],
+                                      [0.5, 0.5 ** (1.0 / 2.0), 1, 2 ** (1.0 / 3.0), 2 ** (1.0 / 2.0), 2])
+    all_anchors = sliding_anchors_all((10, 20), (8, 8), base_anchors)
+
+    final_boxes = {}
+    for i, img_crop in enumerate(imgs_crop):
+        p_cls, p_regr = model_classifier.predict(img_crop[np.newaxis, :, :, :])
+        boxes = {}
+        bbox_threshold = 0.5
+        # 遍历每个anchor
         for ii in range(p_cls.shape[1]):
-            # 如果当前roi为某类的最大概率小于阈值，或者最大概率对应的是背景类，则丢弃
+            # 如果当前anchor为某类的最大概率小于阈值，或者最大概率对应的是背景类，则丢弃
             if np.max(p_cls[0, ii, :]) < bbox_threshold or np.argmax(p_cls[0, ii, :]) == (p_cls.shape[2] - 1):
                 continue
-            cls_num = np.argmax(p_cls[0, ii, :])  # 最大概率对应的类别数字
+            cls_num = np.argmax(p_cls[0, ii, :])  # 最大概率类别对应的下标
             if cls_num not in boxes.keys():
                 boxes[cls_num] = []
 
-            x, y, w, h = rois[0, ii, :]  # 当前roi的左上角坐标和宽高
-            try:
-                # 得到回归参数
-                (tx, ty, tw, th) = p_regr[0, ii, 4 * cls_num:4 * (cls_num + 1)]
-                # 下面四行对应了训练过程中乘以cfg.classifier_regr_std
-                tx /= cfg.classifier_regr_std[0]
-                ty /= cfg.classifier_regr_std[1]
-                tw /= cfg.classifier_regr_std[2]
-                th /= cfg.classifier_regr_std[3]
-                # 调整边框位置
-                x, y, w, h = roi_helpers.apply_regr(x, y, w, h, tx, ty, tw, th)
-            except Exception as e:
-                print(e)
-                pass
+            # 边框回归
+            x1, y1, x2, y2 = regr_revise(all_anchors[ii, :], p_regr[0, ii, 4*cls_num: 4*(cls_num+1)])
+            boxes[cls_num].append([all_anchors[ii, 0], all_anchors[ii, 1],
+                                   all_anchors[ii, 2], all_anchors[ii, 3], np.max(p_cls[0, ii, :])])
+            # boxes[cls_num].append([x1, y1, x2, y2, np.max(p_cls[0, ii, :])])
 
-            # 将roi从feature map映射回resize后的图片，存入boxes
-            boxes[cls_num].append(
-                [cfg.rpn_stride * x, cfg.rpn_stride * y, cfg.rpn_stride * (x + w), cfg.rpn_stride * (y + h),
-                 np.max(p_cls[0, ii, :])])
+            # print('================>')
+            # print('回归前坐标：{}'.format(all_anchors[ii, :]))
+            # print('回归参数：{}'.format(p_regr[0, ii, 4*cls_num: 4*(cls_num+1)]))
+            # print('回归后坐标：{}'.format([x1, y1, x2, y2]))
+            # print('<================')
 
-    for cls_num, box in boxes.items():
-        # nms
-        boxes_nms = roi_helpers.non_max_suppression_fast(box, overlap_thresh=0.3)
-        boxes[cls_num] = boxes_nms
-        print("【{}】:".format(class_mapping[cls_num]))
-        for b in boxes_nms:
-            # 将坐标映射回原始图片
-            b[0], b[1], b[2], b[3] = get_real_coordinates(ratio, b[0], b[1], b[2], b[3])
-            print('coordinate:{} prob: {}'.format(b[0: 4], b[-1]))
+        for cls_num, box in boxes.items():
+            # nms
+            boxes_nms = roi_helpers.non_max_suppression_fast(box, overlap_thresh=0.3, max_boxes=1)
+            boxes[cls_num] = boxes_nms
+            for b in boxes_nms:
+                # 将坐标映射回原始小图片
+                b[0] = round(b[0] / crop_ratios[i][0])
+                b[1] = round(b[1] / crop_ratios[i][1])
+                b[2] = round(b[2] / crop_ratios[i][0])
+                b[3] = round(b[3] / crop_ratios[i][1])
+                # 将坐标映射回原始大图片
+                b[0] += crop_scales[i][0]
+                b[1] += crop_scales[i][1]
+                b[2] += crop_scales[i][0]
+                b[3] += crop_scales[i][1]
 
-    # 绘图
-    img = draw_boxes_and_label_on_image(img, class_mapping, boxes)
-    print('Elapsed time: {}'.format(time.time() - st))
-    cv2.imshow('image', img)
-    result_path = './result_images/{}.jpg'.format(os.path.basename(img_path).split('.')[0])
+                print('【{}】'.format(class_mapping[cls_num]))
+                print('coordinate:{} prob: {}'.format(b[0: 4], b[-1]))
+                if cls_num not in final_boxes.keys():
+                    final_boxes[cls_num] = []
+                final_boxes[cls_num].append([b[0], b[1], b[2], b[3], b[4]])
+
+    # 绘图保存
+    img = draw_boxes_and_label_on_image(img, class_mapping, final_boxes)
+    result_path = './result_images/{}.png'.format(os.path.basename(img_path).split('.')[0])
     print('result saved into ', result_path)
     cv2.imwrite(result_path, img)
-    cv2.waitKey(0)
+
+
+def regr_revise(anchor, regr):
+    """
+    第1阶段bbox_transform函数定义的回归目标在4个偏移量(dx,dy,dw,dh)基础上，做位置修正
+    :return:
+    """
+    x_target_center = regr[0] * (anchor[2] - anchor[0]) + (anchor[2] + anchor[0]) / 2.0
+    y_target_center = regr[1] * (anchor[3] - anchor[1]) + (anchor[3] + anchor[1]) / 2.0
+    w_target = np.exp(regr[2]) * (anchor[2] - anchor[0])
+    h_target = np.exp(regr[3]) * (anchor[3] - anchor[1])
+    x1_target = x_target_center - w_target / 2.0
+    y1_target = y_target_center - h_target / 2.0
+    x2_target = x_target_center + w_target / 2.0
+    y2_target = y_target_center + h_target / 2.0
+    return x1_target, y1_target, x2_target, y2_target
 
 
 def predict(args_):
@@ -183,11 +226,7 @@ def predict(args_):
     class_mapping = {v: k for k, v in class_mapping.items()}  # 键值互换
 
     input_shape_img = (None, None, 3)
-    input_shape_features = (None, None, 1024)
-
     img_input = Input(shape=input_shape_img)
-    roi_input = Input(shape=(cfg.num_rois, 4))
-    feature_map_input = Input(shape=input_shape_features)
 
     # 定义基础网络
     shared_layers = nn.nn_base(img_input, trainable=True)
@@ -197,17 +236,16 @@ def predict(args_):
     rpn_layers = nn.rpn(shared_layers, num_anchors)
 
     # 定义检查网络
-    classifier = nn.classifier(feature_map_input, roi_input, cfg.num_rois, nb_classes=len(class_mapping),
-                               trainable=True)
+    small_img_input = Input(shape=(160, 80, 3))
+    classifier = stage_2_net_vgg(len(class_mapping), small_img_input)
 
     model_rpn = Model(img_input, rpn_layers)
-    # model_classifier_only = Model([feature_map_input, roi_input], classifier)
-    model_classifier = Model([feature_map_input, roi_input], classifier)
+    model_classifier = Model(small_img_input, classifier)
 
     # 加载权重
-    print('Loading weights from {}'.format(cfg.model_path))
-    model_rpn.load_weights(cfg.model_path, by_name=True)
-    model_classifier.load_weights(cfg.model_path, by_name=True)
+    model_rpn.load_weights('model_trained/model_rpn.hdf5', by_name=True)
+    model_classifier.load_weights('model_trained/model_final.hdf5', by_name=True)
+
     # 编译模型
     model_rpn.compile(optimizer='sgd', loss='mse')
     model_classifier.compile(optimizer='sgd', loss='mse')
@@ -226,7 +264,8 @@ def predict(args_):
 
 def parse_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--path', '-p', default='VOC2007_test/JPEGImages/000010.jpg', help='image path')
+    # 00020_annotated_num/images/aug_3_012.png
+    parser.add_argument('--path', '-p', default='test_images', help='image path')
     return parser.parse_args()
 
 

@@ -11,7 +11,7 @@ from keras.layers import Input
 from keras.models import Model
 import os
 import config, pprint, pickle, random
-import resnet as nn
+import resnet_rpn_loss_layer as nn
 from simple_parser import get_data
 from net_design_loss_layer import stage_2_net
 
@@ -31,7 +31,7 @@ def model_all(nb_classes, input_tensor, target_1st, target_2nd, height=80, width
     rpn_loss = nn.rpn(shared_layers, num_anchors, target_1st) # rpn网络分支输出
 
     # 联合部分：难点
-
+    lianhe =
 
     # 定义原2阶段的基础网络
     classifier_loss = stage_2_net(nb_classes, Input(shape=(10, 20, 3)), target_2nd, height=80, width=40)

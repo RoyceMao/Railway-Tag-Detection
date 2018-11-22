@@ -93,7 +93,7 @@ def data_gen_stage_2(result, img_data, sess, X, class_mapping, classes_count, it
     labels_batch, regression_batch, boxes_batch, inds, pos_inds = anchor_targets_bbox(all_anchors, rs_pic[0],
                                                                                       rs_num_gt_pic[0],
                                                                                       len(class_mapping) - 1)
-
+    '''
     # 测试部分：输出第2阶段小图片的正样本anchors情况
     for i, num_gt in enumerate(rs_num_gt_pic[0]):
         if i in gt_index[0]:
@@ -101,7 +101,7 @@ def data_gen_stage_2(result, img_data, sess, X, class_mapping, classes_count, it
                                                       {1: all_anchors[pos_inds[i]]}) # , {1: num_gt}
             cv2.imwrite('./output_test/Pic{}_Prop{}.png'.format(iter_num, i),
                         draw_imgs)
-
+    '''
     #============================================================
     #============================================================
     x1 = rs_pic[0]  # tf.tensor转换为numpy
@@ -231,10 +231,11 @@ def train():
     optimizer = Adam(lr=1e-5)
     optimizer_classifier = Adam(lr=1e-3)
     model_rpn.compile(optimizer=optimizer,
-                      loss=[losses_fn.rpn_loss_cls(num_anchors), losses_fn.rpn_loss_regr(num_anchors)])
+                      loss=[losses_fn.rpn_loss_cls(num_anchors), losses_fn.rpn_loss_regr(num_anchors)],
+                      metrics=['accuracy'])
     model_classifier.compile(optimizer=optimizer_classifier,
                              loss=[losses_fn.class_loss_cls, losses_fn.class_loss_regr(len(classes_count) - 1)],
-                             metrics={'dense_class_{}'.format(len(classes_count)): 'accuracy'})
+                             metrics=['accuracy'])
     model_all.compile(optimizer='sgd', loss='mae')
 
     # 设置一些训练参数
@@ -272,7 +273,8 @@ def train():
                 # X：resize后的图片  Y：标定好的anchor和回归系数  img_data：原始图片的信息
                 X, Y, img_data = next(data_gen_train)
                 # 训练1阶段的rpn
-                # loss_rpn = model_rpn.train_on_batch(X, Y)
+                loss_rpn = model_rpn.train_on_batch(X, Y)
+                print(loss_rpn)
                 # 预测每个anchor的分数和回归系数, P_rpn[0]维度为(1,m,n,9), P_rpn[1]维度为(1,m,n,36)
                 P_rpn = model_rpn.predict_on_batch(X)
                 # 在feature map上生成按预测得分降序排列的proposals（即rois）
@@ -282,42 +284,41 @@ def train():
                 # 训练2阶段的classifier
                 x, y = data_gen_stage_2(result, img_data, sess, X, class_mapping, classes_count, iter_num)
                 loss_class = model_classifier.train_on_batch(x, y)
-                # 删除中间参数，释放内存
-                del X, Y, img_data, P_rpn, result, x, y
-                gc.collect()
+
                 # 统计loss
-                #========== losses[iter_num, 0] = loss_rpn[1]
-                #========== losses[iter_num, 1] = loss_rpn[2]
+                losses[iter_num, 0] = loss_rpn[1]
+                losses[iter_num, 1] = loss_rpn[2]
                 losses[iter_num, 2] = loss_class[1]
                 losses[iter_num, 3] = loss_class[2]
 
                 # 更新进度条   #========== ('rpn_cls', np.mean(losses[:iter_num, 0])), ('rpn_regr', np.mean(losses[:iter_num, 1])),
                 iter_num += 1
                 progbar.update(iter_num,
-                               [('detector_cls', np.mean(losses[:iter_num, 2])),('detector_regr', np.mean(losses[:iter_num, 3]))])
+                               [('rpn_cls', np.mean(losses[:iter_num, 0])), ('rpn_regr', np.mean(losses[:iter_num, 1])),
+                                ('detector_cls', np.mean(losses[:iter_num, 2])),('detector_regr', np.mean(losses[:iter_num, 3]))])
                 n += 1
                 # 如果一个epoch结束，输出各个部分的平均误差
                 if iter_num == epoch_length:
-                    #======  loss_rpn_cls = np.mean(losses[:, 0])
-                    #======  loss_rpn_regr = np.mean(losses[:, 1])
+                    loss_rpn_cls = np.mean(losses[:, 0])
+                    loss_rpn_regr = np.mean(losses[:, 1])
                     loss_class_cls = np.mean(losses[:, 2])
                     loss_class_regr = np.mean(losses[:, 3])
 
-                    #======mean_overlapping_bboxes = float(sum(rpn_accuracy_for_epoch)) / len(rpn_accuracy_for_epoch)
-                    #======rpn_accuracy_for_epoch = []
+                    mean_overlapping_bboxes = float(sum(rpn_accuracy_for_epoch)) / len(rpn_accuracy_for_epoch)
+                    rpn_accuracy_for_epoch = []
 
                     # 输出提示信息
                     if cfg.verbose:
-                        #=======print('Mean number of bounding boxes from RPN overlapping ground truth boxes: {}'.format(
-                            #========mean_overlapping_bboxes))
-                        #======= print('Loss RPN classifier: {}'.format(loss_rpn_cls))
-                        #======= print('Loss RPN regression: {}'.format(loss_rpn_regr))
+                        #==========print('Mean number of bounding boxes from RPN overlapping ground truth boxes: {}'.format(
+                               #===========mean_overlapping_bboxes))
+                        print('Loss RPN classifier: {}'.format(loss_rpn_cls))
+                        print('Loss RPN regression: {}'.format(loss_rpn_regr))
                         print('Loss Detector classifier: {}'.format(loss_class_cls))
                         print('Loss Detector regression: {}'.format(loss_class_regr))
                         print('Elapsed time: {}'.format(time.time() - start_time))
 
                     # 当前整个epoch的总和损失  #=============loss_rpn_cls + loss_rpn_regr +
-                    curr_loss = loss_class_cls + loss_class_regr
+                    curr_loss = loss_rpn_cls + loss_rpn_regr + loss_class_cls + loss_class_regr
                     iter_num = 0
                     start_time = time.time()
                     '''
