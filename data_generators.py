@@ -286,11 +286,11 @@ def get_anchor_gt(all_img_data, C, img_length_calc_function, backend, mode='trai
                 # 对图片做处理，减去均值,像素归一化，调整维度顺序，增加维度
                 # x_img = x_img[:, :, (2, 1, 0)]  # BGR -> RGB
                 x_img = x_img.astype(np.float32)
-                
+                '''
                 x_img[:, :, 0] -= C.img_channel_mean[0]
                 x_img[:, :, 1] -= C.img_channel_mean[1]
                 x_img[:, :, 2] -= C.img_channel_mean[2]
-                
+                '''
                 x_img /= C.img_scaling_factor  # [??? 这个配置参数是什么意义]
                 # x_img = np.transpose(x_img, (2, 0, 1)) # 顺时针翻转90度
                 x_img = np.expand_dims(x_img, axis=0)

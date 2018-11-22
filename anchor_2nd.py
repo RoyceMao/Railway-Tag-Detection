@@ -242,13 +242,10 @@ def anchor_targets_bbox(
             # print(pos_gt_inds)
         # 按照1:2 正负样本比启发式采样
         postive_num = np.sum(labels_batch[index, :, -1] == 1)
-        print(postive_num)
         for i in np.random.randint(0, anchors.shape[0], 2 * postive_num):
             if not (labels_batch[index, :, -1]-1).all():
                 labels_batch[index, i, -1] = 0   # 设为背景类
                 regression_batch[index, i, -1] = 0
-        sample_num = np.sum(labels_batch[index, :, -1] == 0)
-        print(sample_num)
         '''
         # 忽略的
         labels_batch[index, ignore_indices, -1] = -1

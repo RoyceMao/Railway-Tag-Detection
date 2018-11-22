@@ -21,8 +21,7 @@ from simple_parser import get_data
 from props_pic_2nd import props_pic
 from Visual import _create_unique_color_float, _create_unique_color_uchar, draw_boxes_and_label_on_image
 from anchor_2nd import anchors_generation, sliding_anchors_all, pos_neg_iou, anchor_targets_bbox
-# from net_design_2nd import stage_2_net
-from vgg import stage_2_net
+from net_design_2nd import stage_2_net_vgg
 import matplotlib as mpl
 mpl.use('agg')
 np.set_printoptions(threshold=np.inf) # 允许numpy数组的完全打印
@@ -68,9 +67,9 @@ def data_gen_stage_2(result, img_data, sess, X, class_mapping, classes_count, it
     # 生成第二阶段的训练数据
     # ==============================================================================
     batch_size = len(rs_pic[0])  # 一次5张crops图
-    base_anchors = anchors_generation(16, [0.5 ** (1.0 / 3.0), 1, 2 ** (1.0 / 2.0)],
-                                      [1,2 ** (1.0/3.0),2 ** (1.0/2.0),2])
-    all_anchors = sliding_anchors_all((20, 40), (4, 4), base_anchors)
+    base_anchors = anchors_generation(16, [0.5 ** (1.0 / 3.0), 1, 2 ** (1.0 / 3.0)],
+                                      [0.5, 0.5 ** (1.0 / 2.0), 1, 2 ** (1.0 / 3.0), 2 ** (1.0 / 2.0), 2])
+    all_anchors = sliding_anchors_all((10, 20), (8, 8), base_anchors)
     #================================================================
     '''
     # 测试部分：计算当前anchor与当前gt-box的iou，以及框住gt的proposals生成的anchors是否覆盖了所有的小gt
@@ -94,7 +93,7 @@ def data_gen_stage_2(result, img_data, sess, X, class_mapping, classes_count, it
     labels_batch, regression_batch, boxes_batch, inds, pos_inds = anchor_targets_bbox(all_anchors, rs_pic[0],
                                                                                       rs_num_gt_pic[0],
                                                                                       len(class_mapping) - 1)
-    '''
+
     # 测试部分：输出第2阶段小图片的正样本anchors情况
     for i, num_gt in enumerate(rs_num_gt_pic[0]):
         if i in gt_index[0]:
@@ -102,7 +101,7 @@ def data_gen_stage_2(result, img_data, sess, X, class_mapping, classes_count, it
                                                       {1: all_anchors[pos_inds[i]]}) # , {1: num_gt}
             cv2.imwrite('./output_test/Pic{}_Prop{}.png'.format(iter_num, i),
                         draw_imgs)
-    '''
+
     #============================================================
     #============================================================
     x1 = rs_pic[0]  # tf.tensor转换为numpy
@@ -210,7 +209,7 @@ def train():
     rpn = nn.rpn(shared_layers, num_anchors)
 
     # 定义后续分类网络的输出
-    classifier = stage_2_net(len(classes_count), small_img_input, height=160, width=80)
+    classifier = stage_2_net_vgg(len(classes_count), small_img_input, height=160, width=80)
 
     model_rpn = Model(img_input, rpn[:2])
     model_classifier = Model(small_img_input, classifier)
@@ -222,7 +221,7 @@ def train():
     try:
         print('loading weights from {}'.format(cfg.base_net_weights))
         model_rpn.load_weights(cfg.base_rpn_model_path, by_name=True)
-        model_classifier.load_weights(cfg.base_tf_model_path, by_name=True)
+        # model_classifier.load_weights(cfg.base_tf_model_path, by_name=True)
     except Exception as e:
         print(e)
         print('Could not load pretrained model weights. Weights can be found in the keras application folder '
@@ -239,7 +238,7 @@ def train():
     model_all.compile(optimizer='sgd', loss='mae')
 
     # 设置一些训练参数
-    epoch_length = 100
+    epoch_length = 120
     num_epochs = 3
     losses = np.zeros((epoch_length, 5))
     rpn_accuracy_rpn_monitor = []
