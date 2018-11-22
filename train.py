@@ -21,7 +21,8 @@ from simple_parser import get_data
 from props_pic_2nd import props_pic
 from Visual import _create_unique_color_float, _create_unique_color_uchar, draw_boxes_and_label_on_image
 from anchor_2nd import anchors_generation, sliding_anchors_all, pos_neg_iou, anchor_targets_bbox
-from net_design_2nd import stage_2_net
+# from net_design_2nd import stage_2_net
+from vgg import stage_2_net
 import matplotlib as mpl
 mpl.use('agg')
 np.set_printoptions(threshold=np.inf) # 允许numpy数组的完全打印
@@ -40,10 +41,10 @@ def data_gen_stage_2(result, img_data, sess, X, class_mapping, classes_count, it
     # feature map上的proposals坐标映射回resize原图(16倍下采样)
     result[:, :] = 16 * result[:, :]
     # 提取第1阶段每个batch图片对应的Tag标签标注
-    x1_tag = img_data['outer_boxes'][0]['x1'] // 1.8  # resize缩放因子=1.8
-    y1_tag = img_data['outer_boxes'][0]['y1'] // 1.8
-    x2_tag = img_data['outer_boxes'][0]['x2'] // 1.8
-    y2_tag = img_data['outer_boxes'][0]['y2'] // 1.8
+    x1_tag = img_data['outer_boxes'][0]['x1']
+    y1_tag = img_data['outer_boxes'][0]['y1']
+    x2_tag = img_data['outer_boxes'][0]['x2']
+    y2_tag = img_data['outer_boxes'][0]['y2']
     cls_tag = img_data['outer_boxes'][0]['class']
     # 提取第1阶段每个batch图片对应的数字标签标注
     annos_list = [[], [], [], [], []]
@@ -51,10 +52,10 @@ def data_gen_stage_2(result, img_data, sess, X, class_mapping, classes_count, it
         # 对无法辨别的小数字标注（高、宽均低于原图的10个像素点）做剔除，防止影响最终检测效果
         if img_data['bboxes'][i]['x2'] - img_data['bboxes'][i]['x1'] >= 10 and img_data['bboxes'][i]['y2'] - \
                 img_data['bboxes'][i]['y1'] >= 10:
-            annos_list[0].append(img_data['bboxes'][i]['x1'] // 1.8)
-            annos_list[1].append(img_data['bboxes'][i]['y1'] // 1.8)
-            annos_list[2].append(img_data['bboxes'][i]['x2'] // 1.8)
-            annos_list[3].append(img_data['bboxes'][i]['y2'] // 1.8)
+            annos_list[0].append(img_data['bboxes'][i]['x1'])
+            annos_list[1].append(img_data['bboxes'][i]['y1'])
+            annos_list[2].append(img_data['bboxes'][i]['x2'])
+            annos_list[3].append(img_data['bboxes'][i]['y2'])
             annos_list[4].append(img_data['bboxes'][i]['class'])
     annos_np = np.concatenate((np.array(annos_list[0])[np.newaxis, :], np.array(annos_list[1])[np.newaxis, :],
                                np.array(annos_list[2])[np.newaxis, :], np.array(annos_list[3])[np.newaxis, :],
@@ -67,9 +68,9 @@ def data_gen_stage_2(result, img_data, sess, X, class_mapping, classes_count, it
     # 生成第二阶段的训练数据
     # ==============================================================================
     batch_size = len(rs_pic[0])  # 一次5张crops图
-    base_anchors = anchors_generation(10, [0.5 ** (1.0 / 3.0), 1, 2 ** (1.0 / 2.0)],
-                                      [0.5 ** (1.0 / 3.0),1,2 ** (1.0/3.0),2 ** (1.0/2.0),2])
-    all_anchors = sliding_anchors_all((5, 10), (8, 8), base_anchors)
+    base_anchors = anchors_generation(16, [0.5 ** (1.0 / 3.0), 1, 2 ** (1.0 / 2.0)],
+                                      [1,2 ** (1.0/3.0),2 ** (1.0/2.0),2])
+    all_anchors = sliding_anchors_all((20, 40), (4, 4), base_anchors)
     #================================================================
     '''
     # 测试部分：计算当前anchor与当前gt-box的iou，以及框住gt的proposals生成的anchors是否覆盖了所有的小gt
@@ -93,7 +94,7 @@ def data_gen_stage_2(result, img_data, sess, X, class_mapping, classes_count, it
     labels_batch, regression_batch, boxes_batch, inds, pos_inds = anchor_targets_bbox(all_anchors, rs_pic[0],
                                                                                       rs_num_gt_pic[0],
                                                                                       len(class_mapping) - 1)
-
+    '''
     # 测试部分：输出第2阶段小图片的正样本anchors情况
     for i, num_gt in enumerate(rs_num_gt_pic[0]):
         if i in gt_index[0]:
@@ -101,7 +102,7 @@ def data_gen_stage_2(result, img_data, sess, X, class_mapping, classes_count, it
                                                       {1: all_anchors[pos_inds[i]]}) # , {1: num_gt}
             cv2.imwrite('./output_test/Pic{}_Prop{}.png'.format(iter_num, i),
                         draw_imgs)
-
+    '''
     #============================================================
     #============================================================
     x1 = rs_pic[0]  # tf.tensor转换为numpy
@@ -199,7 +200,7 @@ def train():
         input_shape_img = (None, None, 3)
 
     img_input = Input(shape=input_shape_img)
-    small_img_input = Input(shape=(80, 40, 3)) # 高为80，宽为40
+    small_img_input = Input(shape=(160, 80, 3)) # 高为80，宽为40
 
     # 定义基础网络
     shared_layers = nn.nn_base(img_input, trainable=True)
@@ -209,7 +210,7 @@ def train():
     rpn = nn.rpn(shared_layers, num_anchors)
 
     # 定义后续分类网络的输出
-    classifier = stage_2_net(len(classes_count), small_img_input, height=80, width=40)
+    classifier = stage_2_net(len(classes_count), small_img_input, height=160, width=80)
 
     model_rpn = Model(img_input, rpn[:2])
     model_classifier = Model(small_img_input, classifier)
@@ -238,8 +239,8 @@ def train():
     model_all.compile(optimizer='sgd', loss='mae')
 
     # 设置一些训练参数
-    epoch_length = 180
-    num_epochs = 2
+    epoch_length = 100
+    num_epochs = 3
     losses = np.zeros((epoch_length, 5))
     rpn_accuracy_rpn_monitor = []
     rpn_accuracy_for_epoch = []

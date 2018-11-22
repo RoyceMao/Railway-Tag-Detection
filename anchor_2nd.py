@@ -221,14 +221,14 @@ def anchor_targets_bbox(
 
     # compute labels and regression targets
     for index, (image, annotations) in enumerate(zip(image_group, annotations_group)):
+        labels_batch[index, :, -1] = -1
+        regression_batch[index, :, -1] = -1
         if annotations.shape[0]:
             # obtain indices of gt annotations with the greatest overlap
             positive_indices, ignore_indices, argmax_overlaps_inds, pos_gt_inds = compute_gt_annotations(anchors, annotations, negative_overlap, positive_overlap)
-            # 全部初始化为忽略
-            labels_batch[index, :, -1] = -1
+            # 赋值正样本
             labels_batch[index, positive_indices, -1] = 1
 
-            regression_batch[index, :, -1] = -1
             regression_batch[index, positive_indices, -1] = 1
 
             # compute box regression targets
@@ -242,11 +242,13 @@ def anchor_targets_bbox(
             # print(pos_gt_inds)
         # 按照1:2 正负样本比启发式采样
         postive_num = np.sum(labels_batch[index, :, -1] == 1)
-        # print(postive_num)
+        print(postive_num)
         for i in np.random.randint(0, anchors.shape[0], 2 * postive_num):
             if not (labels_batch[index, :, -1]-1).all():
                 labels_batch[index, i, -1] = 0   # 设为背景类
                 regression_batch[index, i, -1] = 0
+        sample_num = np.sum(labels_batch[index, :, -1] == 0)
+        print(sample_num)
         '''
         # 忽略的
         labels_batch[index, ignore_indices, -1] = -1

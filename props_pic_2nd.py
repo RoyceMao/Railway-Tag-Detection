@@ -33,8 +33,8 @@ def props_pic(sess, proposals, all_tag_annos, all_num_annos, all_imgs):
         rs_num_gt_single = [] # 单独一张图片crop得到的区域，所对应的小数字标注
         gt_index_single = []
         # 统一resize到（80，40，3）
-        width_mean = 40
-        height_mean = 80
+        width_mean = 80
+        height_mean = 160
         # 保留得分前5的proposals
         rs_boxes_single = proposals[i]
         # 把所有保存的proposals做padding（这里直接做长宽扩充）
@@ -49,7 +49,7 @@ def props_pic(sess, proposals, all_tag_annos, all_num_annos, all_imgs):
                 x2 = np.max((prop[0][2], all_tag_annos[i][2]))
             '''
             # 短边为600的resize图片上，1阶段的Top5 proposals 高宽均值大约为（40，20），padding宽加10，高加20个像素点
-            rs_boxes_single[j] = [prop[0][0]-5,prop[0][1]-10,prop[0][2]+5,prop[0][3]+10]
+            rs_boxes_single[j] = [prop[0][0]-7,prop[0][1]-15,prop[0][2]+7,prop[0][3]+15]
             # print(overlap(all_tag_annos[i][:4][np.newaxis, :], rs_boxes_single[j][np.newaxis, :])[0][0])
             # 然后进行小数字坐标标签的关系变换
             ## crops后的图片num_labels坐标等于原坐标减去crop_prop的左上角坐标值(x_min,y_min)

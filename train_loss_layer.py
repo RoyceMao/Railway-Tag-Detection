@@ -31,7 +31,7 @@ def model_all(nb_classes, input_tensor, target_1st, target_2nd, height=80, width
     rpn_loss = nn.rpn(shared_layers, num_anchors, target_1st) # rpn网络分支输出
 
     # 联合部分：难点
-    rpn_loss = 
+
 
     # 定义原2阶段的基础网络
     classifier_loss = stage_2_net(nb_classes, Input(shape=(10, 20, 3)), target_2nd, height=80, width=40)

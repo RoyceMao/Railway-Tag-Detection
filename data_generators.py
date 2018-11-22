@@ -253,9 +253,10 @@ def get_anchor_gt(all_img_data, C, img_length_calc_function, backend, mode='trai
     :return: 生成器，生成resize后的图片，标定好的anchor和回归系数，原始图片的信息
     """
     while True:
+        '''
         if mode == 'train':
             random.shuffle(all_img_data)  # 打乱图片顺序
-
+        '''
         for img_data in all_img_data:
             try:
                 # 读入原始图片，并根据配置信息看是否做数据增强
@@ -266,10 +267,14 @@ def get_anchor_gt(all_img_data, C, img_length_calc_function, backend, mode='trai
 
                 # 读取原始图片的宽和高
                 width, height = (img_data['width'], img_data['height'])
+                resized_width = width
+                resized_height = height
+                '''
+                # 小数字目标太小，不做短边为600的resize了
                 # 将原始图片resize到输入图片，短边为600
                 resized_width, resized_height = get_new_img_size(width, height, C.im_size)
                 x_img = cv2.resize(x_img, (resized_width, resized_height), interpolation=cv2.INTER_CUBIC)
-
+                '''
                 # 得到标定好的anchor和回归系数
                 # y_rpn_cls：shape(1,18,m,n), 第二维的前面9个数的值表明了哪些anchor在训练中起作用，后面9个数的值区分正负样本
                 # y_rpn_regr：shape(1,72,m,n), 第二维的前面36个数是9个anchor是否为正负样本重复4次，后面36个数是对应的回归参数
@@ -279,22 +284,22 @@ def get_anchor_gt(all_img_data, C, img_length_calc_function, backend, mode='trai
                     continue
 
                 # 对图片做处理，减去均值,像素归一化，调整维度顺序，增加维度
-                x_img = x_img[:, :, (2, 1, 0)]  # BGR -> RGB
+                # x_img = x_img[:, :, (2, 1, 0)]  # BGR -> RGB
                 x_img = x_img.astype(np.float32)
-                '''
-                x_img[:, :, 0] -= C.img_channel_mean[0]  # [??? 不明白这里为什么要再每个channel上减去均值]
+                
+                x_img[:, :, 0] -= C.img_channel_mean[0]
                 x_img[:, :, 1] -= C.img_channel_mean[1]
                 x_img[:, :, 2] -= C.img_channel_mean[2]
-                '''
+                
                 x_img /= C.img_scaling_factor  # [??? 这个配置参数是什么意义]
-                x_img = np.transpose(x_img, (2, 0, 1))
+                # x_img = np.transpose(x_img, (2, 0, 1)) # 顺时针翻转90度
                 x_img = np.expand_dims(x_img, axis=0)
 
                 # 把第二维后面的36个数乘以4（测试过程中会对应的除以4）[??? ]
                 y_rpn_regr[:, y_rpn_regr.shape[1]//2:, :, :] *= C.std_scaling
 
                 if backend == 'tf':
-                    x_img = np.transpose(x_img, (0, 2, 3, 1))
+                    # x_img = np.transpose(x_img, (0, 2, 3, 1))
                     y_rpn_cls = np.transpose(y_rpn_cls, (0, 2, 3, 1))
                     y_rpn_regr = np.transpose(y_rpn_regr, (0, 2, 3, 1))
 
