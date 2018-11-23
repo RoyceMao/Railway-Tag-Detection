@@ -21,13 +21,13 @@ from simple_parser import get_data
 from props_pic_2nd import props_pic
 from Visual import _create_unique_color_float, _create_unique_color_uchar, draw_boxes_and_label_on_image
 from anchor_2nd import anchors_generation, sliding_anchors_all, pos_neg_iou, anchor_targets_bbox
-from net_design_2nd import stage_2_net_vgg
+from net_design_2nd import stage_2_net_res
 import matplotlib as mpl
 mpl.use('agg')
 np.set_printoptions(threshold=np.inf) # 允许numpy数组的完全打印
 np.seterr(divide='ignore', invalid='ignore') # 不允许“divide”Warning相关信息的打印
 
-def data_gen_stage_2(result, img_data, sess, X, class_mapping, classes_count, iter_num):
+def data_gen_stage_2(result, img_data, sess, X, class_mapping, classes_count, iter_num, num_logistic):
     """
     根据1阶段的一个batch（1张）图片处理结果，生成第2阶段的训练数据
     :param result: 
@@ -93,15 +93,17 @@ def data_gen_stage_2(result, img_data, sess, X, class_mapping, classes_count, it
     labels_batch, regression_batch, boxes_batch, inds, pos_inds = anchor_targets_bbox(all_anchors, rs_pic[0],
                                                                                       rs_num_gt_pic[0],
                                                                                       len(class_mapping) - 1)
-    '''
+
     # 测试部分：输出第2阶段小图片的正样本anchors情况
     for i, num_gt in enumerate(rs_num_gt_pic[0]):
         if i in gt_index[0]:
+            for num in rs_num_gt_pic[0][i][:,4]:
+                num_logistic[int(num)] += 1
             draw_imgs = draw_boxes_and_label_on_image(rs_pic[0][i],
                                                       {1: all_anchors[pos_inds[i]]}) # , {1: num_gt}
-            cv2.imwrite('./output_test/Pic{}_Prop{}.png'.format(iter_num, i),
+            cv2.imwrite('./anchors_test/Pic{}_Prop{}.png'.format(iter_num, i),
                         draw_imgs)
-    '''
+
     #============================================================
     #============================================================
     x1 = rs_pic[0]  # tf.tensor转换为numpy
@@ -142,7 +144,7 @@ def data_gen_stage_2(result, img_data, sess, X, class_mapping, classes_count, it
     y2 = np.concatenate([np.repeat(labels_batch[:, :, :(len(classes_count) - 1)], 4, axis=2), tmp], axis=2)
     del x1_tag,y1_tag,x2_tag,y2_tag,cls_tag,annos_list,annos_np,rs_pic,rs_boxes,rs_num_gt_pic,rs_wh,gt_index,labels_batch,regression_batch,boxes_batch,inds,pos_inds,tmp
     gc.collect()
-    return np.array(x1), [y1,y2]
+    return np.array(x1), [y1,y2], num_logistic
 
 
 def train():
@@ -209,19 +211,19 @@ def train():
     rpn = nn.rpn(shared_layers, num_anchors)
 
     # 定义后续分类网络的输出
-    classifier = stage_2_net_vgg(len(classes_count), small_img_input, height=160, width=80)
+    classifier = stage_2_net_res(len(classes_count), small_img_input, height=160, width=80)
 
     model_rpn = Model(img_input, rpn[:2])
     model_classifier = Model(small_img_input, classifier)
 
-    model_all = Model([img_input, small_img_input], rpn[:2] + classifier)
+    # model_all = Model([img_input, small_img_input], rpn[:2] + classifier)
 
     # 加载预训练模型参数
     print('\n======== 加载预训练模型参数 ========')
     try:
         print('loading weights from {}'.format(cfg.base_net_weights))
         model_rpn.load_weights(cfg.base_rpn_model_path, by_name=True)
-        # model_classifier.load_weights(cfg.base_tf_model_path, by_name=True)
+        model_classifier.load_weights(cfg.base_tf_model_path, by_name=True)
     except Exception as e:
         print(e)
         print('Could not load pretrained model weights. Weights can be found in the keras application folder '
@@ -236,7 +238,7 @@ def train():
     model_classifier.compile(optimizer=optimizer_classifier,
                              loss=[losses_fn.class_loss_cls, losses_fn.class_loss_regr(len(classes_count) - 1)],
                              metrics=['accuracy'])
-    model_all.compile(optimizer='sgd', loss='mae')
+    # model_all.compile(optimizer='sgd', loss='mae')
 
     # 设置一些训练参数
     epoch_length = 120
@@ -251,6 +253,7 @@ def train():
     # config_tf = tf.ConfigProto()
     # config_tf.gpu_options.allow_growth = True
     sess = tf.Session() # config=config_tf
+    num_logistic = [0,0,0,0,0,0,0,0,0,0]
 
     print('\n======== 开始训练 ========')
     for epoch_num in range(num_epochs):
@@ -271,10 +274,9 @@ def train():
                               ' the ground truth boxes. Check RPN settings or keep training.')
 
                 # X：resize后的图片  Y：标定好的anchor和回归系数  img_data：原始图片的信息
-                X, Y, img_data = next(data_gen_train)
+                X, Y, img_data, X_2 = next(data_gen_train)
                 # 训练1阶段的rpn
                 loss_rpn = model_rpn.train_on_batch(X, Y)
-                print(loss_rpn)
                 # 预测每个anchor的分数和回归系数, P_rpn[0]维度为(1,m,n,9), P_rpn[1]维度为(1,m,n,36)
                 P_rpn = model_rpn.predict_on_batch(X)
                 # 在feature map上生成按预测得分降序排列的proposals（即rois）
@@ -282,7 +284,7 @@ def train():
                                                 overlap_thresh=0.7,
                                                 max_boxes=5)
                 # 训练2阶段的classifier
-                x, y = data_gen_stage_2(result, img_data, sess, X, class_mapping, classes_count, iter_num)
+                x, y, num_logistic = data_gen_stage_2(result, img_data, sess, X_2, class_mapping, classes_count, iter_num, num_logistic)
                 loss_class = model_classifier.train_on_batch(x, y)
 
                 # 统计loss
@@ -304,8 +306,8 @@ def train():
                     loss_class_cls = np.mean(losses[:, 2])
                     loss_class_regr = np.mean(losses[:, 3])
 
-                    mean_overlapping_bboxes = float(sum(rpn_accuracy_for_epoch)) / len(rpn_accuracy_for_epoch)
-                    rpn_accuracy_for_epoch = []
+                    #=======mean_overlapping_bboxes = float(sum(rpn_accuracy_for_epoch)) / len(rpn_accuracy_for_epoch)
+                    #=======rpn_accuracy_for_epoch = []
 
                     # 输出提示信息
                     if cfg.verbose:
@@ -336,9 +338,10 @@ def train():
                         if cfg.verbose:
                             print('Total loss decreased from {} to {}, saving weights'.format(best_loss, curr_loss))
                         best_loss = curr_loss
-                        model_all.save_weights(cfg.model_path)
+                        model_classifier.save_weights(cfg.model_path)
 
                     break
+    print(num_logistic)
 '''
             except Exception as e:
                 print('Exception: {}'.format(e))

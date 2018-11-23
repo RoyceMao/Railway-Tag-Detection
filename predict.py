@@ -34,20 +34,22 @@ def format_img_size(img, cfg):
 
 def format_img_channels(img, cfg):
     """ 每个channel减去像素均值，将channel放在第一维，然后在前面增加一个维度 """
-    img = img[:, :, (2, 1, 0)]
+    # img = img[:, :, (2, 1, 0)]
     img = img.astype(np.float32)
-    img[:, :, 0] -= cfg.img_channel_mean[0]
-    img[:, :, 1] -= cfg.img_channel_mean[1]
-    img[:, :, 2] -= cfg.img_channel_mean[2]
+
+    img[:, :, 0] -= np.mean(img[:, :, 0])
+    img[:, :, 1] -= np.mean(img[:, :, 1])
+    img[:, :, 2] -= np.mean(img[:, :, 2])
+
     img /= cfg.img_scaling_factor
-    img = np.transpose(img, (2, 0, 1))
+    # img = np.transpose(img, (2, 0, 1))
     img = np.expand_dims(img, axis=0)
     return img
 
 
 def format_img(img, C):
     """ formats an image for model prediction based on config """
-    img, ratio = format_img_size(img, C)
+    ratio = 1
     img = format_img_channels(img, C)
     return img, ratio
 
@@ -83,14 +85,17 @@ def predict_single_image(img_path, model_rpn, model_classifier, cfg, class_mappi
     # print(class_mapping)
 
     X, ratio = format_img(img, cfg)  # 预处理图片（缩放、变换维度）
+    '''
     if K.image_dim_ordering() == 'tf':
         X = np.transpose(X, (0, 2, 3, 1))
-
+    '''
     # 得到所有anchor的分类得分、回归参数以及feature map
-    Y1, Y2, F = model_rpn.predict(X)
+    P_rpn = model_rpn.predict_on_batch(X)
 
     # 得到proposals (rois)
-    proposals = roi_helpers.rpn_to_roi(Y1, Y2, cfg, K.image_dim_ordering(), overlap_thresh=0.7, max_boxes=5)
+    proposals = roi_helpers.rpn_to_roi(P_rpn[0], P_rpn[1], cfg, K.image_dim_ordering(), use_regr=True,
+                                                overlap_thresh=0.7,
+                                                max_boxes=5)
 
     rpn_outputs = []  # 存放proposals
 
@@ -104,7 +109,7 @@ def predict_single_image(img_path, model_rpn, model_classifier, cfg, class_mappi
 
     # for box in rpn_outputs:
     # nms
-    boxes_nms = roi_helpers.non_max_suppression_fast(rpn_outputs, overlap_thresh=0.2)
+    boxes_nms = roi_helpers.non_max_suppression_fast(rpn_outputs, overlap_thresh=0.8)
     rpn_outputs = boxes_nms
     print("【RPN outputs】:")
     for b in boxes_nms:
@@ -137,7 +142,7 @@ def predict_single_image(img_path, model_rpn, model_classifier, cfg, class_mappi
 
     final_boxes = {}
     for i, img_crop in enumerate(imgs_crop):
-        p_cls, p_regr = model_classifier.predict(img_crop[np.newaxis, :, :, :])
+        p_cls, p_regr = model_classifier.predict_on_batch(img_crop[np.newaxis, :, :, :])
         boxes = {}
         bbox_threshold = 0.5
         # 遍历每个anchor
@@ -243,7 +248,7 @@ def predict(args_):
     model_classifier = Model(small_img_input, classifier)
 
     # 加载权重
-    model_rpn.load_weights('model_trained/model_rpn.hdf5', by_name=True)
+    model_rpn.load_weights('model_trained/model_final.hdf5', by_name=True)
     model_classifier.load_weights('model_trained/model_final.hdf5', by_name=True)
 
     # 编译模型
@@ -265,7 +270,7 @@ def predict(args_):
 def parse_args():
     parser = argparse.ArgumentParser()
     # 00020_annotated_num/images/aug_3_012.png
-    parser.add_argument('--path', '-p', default='test_images', help='image path')
+    parser.add_argument('--path', '-p', default='./00020_annotated_num_120/images', help='image path')
     return parser.parse_args()
 
 

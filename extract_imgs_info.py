@@ -26,9 +26,9 @@ def extract_imgs_infos(annots_dir, imgs_dir):
             ymax = obj.find('ymax').text
             objects.append(','.join([img_path, xmin, ymin, xmax, ymax, cls_name]) + '\n')
 
-        with open('img_infos.txt', 'a+', encoding='utf-8') as f:
+        with open('img_infos_voc.txt', 'a+', encoding='utf-8') as f:
             f.writelines(objects)
 
 
 if __name__ == '__main__':
-    extract_imgs_infos('00020_annotated_num/annotations', '00020_annotated_num/images')
+    extract_imgs_infos('00020_annotated_num_120/annotations', '00020_annotated_num_120/images')

@@ -10,12 +10,13 @@ from __future__ import absolute_import
 import warnings
 
 from keras.models import Model
-from keras.layers import Conv2D, Reshape, Input, Activation, Convolution2D, MaxPooling2D, ZeroPadding2D, Add, BatchNormalization, concatenate
+from keras.layers import Conv2D, Reshape, Input, Activation, Convolution2D, MaxPooling2D, ZeroPadding2D, Add, BatchNormalization, concatenate, Dense
 from fixed_batch_normalization import FixedBatchNormalization
 from keras.engine.topology import get_source_inputs
 from keras.utils import layer_utils
 from keras.utils.data_utils import get_file
 from keras import backend as K
+from keras_applications.resnet50 import identity_block, conv_block
 from roi_pooling_conv import RoiPoolingConv
 
 def stage_2_net(nb_classes, input_tensor, height=160, width=80):
@@ -52,8 +53,8 @@ def stage_2_net(nb_classes, input_tensor, height=160, width=80):
     bboxes_regression = Dense(4 * (nb_classes - 1), activation='linear', kernel_initializer='zero')(concat)
     '''
     # 最终的model构建
-    # detect_model = Model(inputs=input_tensor, outputs=[classification, bboxes_regression])
-    # detect_model.summary()
+    detect_model = Model(inputs=input_tensor, outputs=[classification, bboxes_regression])
+    detect_model.summary()
 
     return [classification, bboxes_regression]
 
@@ -83,6 +84,11 @@ def stage_2_net_vgg(nb_classes, input_tensor, height = 160, width = 80):
     x = Conv2D(256, (3, 3), activation='relu', padding='same', name='block3_conv3')(x)
     x = MaxPooling2D((2, 2), strides=(2, 2), name='block3_pool')(x)
 
+    # # 接上cls输出层
+    # classification = Dense(nb_classes, activation='softmax', kernel_initializer='zero')(x)
+    # # 接上regr输出层
+    # bboxes_regression = Dense(4 * (nb_classes - 1), activation='linear', kernel_initializer='zero')(x)
+
     # 接上cls输出层
     classification = Convolution2D(filters=height * width * 18 * nb_classes // 12800, kernel_size=3, padding='same')(x)
     classification = Reshape(target_shape=(-1, nb_classes))(classification)
@@ -97,18 +103,20 @@ def stage_2_net_vgg(nb_classes, input_tensor, height = 160, width = 80):
 
 def stage_2_net_res(nb_classes, input_tensor, height = 160, width = 80):
     """
-    resnet网络的前2个blocks，4倍下采样
+    resnet网络的前2个blocks，8倍下采样
     :param input_tensor: 
     :param trainable: 
     :return: 
     """
     bn_axis = 3
-    x = ZeroPadding2D((3, 3))(input_tensor)
-
-    x = Convolution2D(64, (7, 7), strides=(2, 2), name='conv1')(x)
-
-    # NOTE: this code only support to keras 2.0.3, newest version this line will got errors.
-    x = FixedBatchNormalization(axis=bn_axis, name='bn_conv1')(x)
+    # resnet50基础网络部分
+    x = ZeroPadding2D(padding=(3, 3), name='conv1_zero')(input_tensor)
+    x = Conv2D(64, (7, 7),
+               strides=(2, 2),
+               padding='valid',
+               kernel_initializer='he_normal',
+               name='conv1_res')(x)
+    x = BatchNormalization(axis=bn_axis, name='bn_conv1_res')(x)
     x = Activation('relu')(x)
     x = MaxPooling2D((3, 3), strides=(2, 2))(x)
 
@@ -116,77 +124,26 @@ def stage_2_net_res(nb_classes, input_tensor, height = 160, width = 80):
     x = identity_block(x, 3, [64, 64, 256], stage=2, block='b')
     x = identity_block(x, 3, [64, 64, 256], stage=2, block='c')
 
+    x = conv_block(x, 3, [128, 128, 512], stage=3, block='a')
+    x = identity_block(x, 3, [128, 128, 512], stage=3, block='b')
+    x = identity_block(x, 3, [128, 128, 512], stage=3, block='c')
+    x = identity_block(x, 3, [128, 128, 512], stage=3, block='d')
+
     # 接上cls输出层
-    classification = Convolution2D(filters=height * width * 12 * nb_classes // 12800, kernel_size=3, padding='same')(x)
+    classification = Convolution2D(filters=height * width * 18 * nb_classes // 12800, kernel_size=3, padding='same')(x)
     classification = Reshape(target_shape=(-1, nb_classes))(classification)
     classification = Activation(activation='softmax', name='classification')(classification)
     # 接上regr输出层
-    bboxes_regression = Convolution2D(filters=height * width * 12 * 4 // 1280, kernel_size=3, padding='same')(x)
+    bboxes_regression = Convolution2D(filters=height * width * 18 * 4 // 1280, kernel_size=3, padding='same')(x)
     bboxes_regression = Reshape(target_shape=(-1, 4*(nb_classes-1)), name='regression')(bboxes_regression)
 
-    detect_model = Model(inputs=input_tensor, outputs=[classification, bboxes_regression])
-    detect_model.summary()
+    # detect_model = Model(inputs=input_tensor, outputs=[classification, bboxes_regression])
+    # detect_model.summary()
     return [classification, bboxes_regression]
 
-def identity_block(input_tensor, kernel_size, filters, stage, block, trainable=True):
-    nb_filter1, nb_filter2, nb_filter3 = filters
 
-    if K.image_dim_ordering() == 'tf':
-        bn_axis = 3
-    else:
-        bn_axis = 1
-
-    conv_name_base = 'res' + str(stage) + block + '_branch'
-    bn_name_base = 'bn' + str(stage) + block + '_branch'
-
-    x = Convolution2D(nb_filter1, (1, 1), name=conv_name_base + '2a', trainable=trainable)(input_tensor)
-    x = FixedBatchNormalization(axis=bn_axis, name=bn_name_base + '2a')(x)
-    x = Activation('relu')(x)
-
-    x = Convolution2D(nb_filter2, (kernel_size, kernel_size), padding='same', name=conv_name_base + '2b',
-                      trainable=trainable)(x)
-    x = FixedBatchNormalization(axis=bn_axis, name=bn_name_base + '2b')(x)
-    x = Activation('relu')(x)
-
-    x = Convolution2D(nb_filter3, (1, 1), name=conv_name_base + '2c', trainable=trainable)(x)
-    x = FixedBatchNormalization(axis=bn_axis, name=bn_name_base + '2c')(x)
-
-    x = Add()([x, input_tensor])
-    x = Activation('relu')(x)
-    return x
-
-def conv_block(input_tensor, kernel_size, filters, stage, block, strides=(2, 2), trainable=True):
-    nb_filter1, nb_filter2, nb_filter3 = filters
-    if K.image_dim_ordering() == 'tf':
-        bn_axis = 3
-    else:
-        bn_axis = 1
-
-    conv_name_base = 'res' + str(stage) + block + '_branch'
-    bn_name_base = 'bn' + str(stage) + block + '_branch'
-
-    x = Convolution2D(nb_filter1, (1, 1), strides=strides, name=conv_name_base + '2a', trainable=trainable)(
-        input_tensor)
-    x = FixedBatchNormalization(axis=bn_axis, name=bn_name_base + '2a')(x)
-    x = Activation('relu')(x)
-
-    x = Convolution2D(nb_filter2, (kernel_size, kernel_size), padding='same', name=conv_name_base + '2b',
-                      trainable=trainable)(x)
-    x = FixedBatchNormalization(axis=bn_axis, name=bn_name_base + '2b')(x)
-    x = Activation('relu')(x)
-
-    x = Convolution2D(nb_filter3, (1, 1), name=conv_name_base + '2c', trainable=trainable)(x)
-    x = FixedBatchNormalization(axis=bn_axis, name=bn_name_base + '2c')(x)
-
-    shortcut = Convolution2D(nb_filter3, (1, 1), strides=strides, name=conv_name_base + '1', trainable=trainable)(
-        input_tensor)
-    shortcut = FixedBatchNormalization(axis=bn_axis, name=bn_name_base + '1')(shortcut)
-
-    x = Add()([x, shortcut])
-    x = Activation('relu')(x)
-    return x
 
 if __name__ == "__main__":
     # stage_2_net(11, Input(shape=(160, 80, 3)), height=160, width=80)
-    stage_2_net_vgg(11, Input(shape=(160, 80, 3)), height=160, width=80)
-    # stage_2_net_res(11, Input(shape=(160, 80, 3)), height=160, width=80)
+    # stage_2_net_vgg(11, Input(shape=(160, 80, 3)), height=160, width=80)
+    stage_2_net_res(11, Input(shape=(160, 80, 3)), height=160, width=80)
