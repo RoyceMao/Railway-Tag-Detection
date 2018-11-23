@@ -167,4 +167,4 @@ def rpn(base_layers, num_anchors, x_target):
     x_loss_cls = Lambda(rpn_loss_cls(num_anchors), name='x_cls_loss')([x_target[0], x_class])
     x_loss_regr = Lambda(rpn_loss_regr(num_anchors), name='x_regr_loss')([x_target[1], x_regr])
 
-    return [x_loss_cls, x_loss_regr, base_layers]
+    return [x_class, x_regr]

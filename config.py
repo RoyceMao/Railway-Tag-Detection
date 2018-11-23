@@ -53,6 +53,7 @@ class Config:
         self.model_path = 'model_trained/model_classifier.hdf5'
         self.base_rpn_model_path = 'model_trained/resnet50_weights_tf_dim_ordering_tf_kernels_notop.h5' # 稍微过拟合的rpn模型，能较好地画出proposals
         self.base_tf_model_path = 'model_trained/resnet50_weights_tf_dim_ordering_tf_kernels_notop.h5' # 原预训练模型
+        self.base_model_path = 'model_trained/resnet50_weights_tf_dim_ordering_tf_kernels_notop.h5'
 
         # params add by me
         self.data_dir = '.data/'

@@ -6,16 +6,27 @@ Created on 2018/11/19 10:00
 
 # 把loss写进layer之后，2阶段网络结构的合并
 """
+import os
+import cv2
+import time
+import numpy as np
+from keras.utils import generic_utils
 from keras.optimizers import Adam
 from keras.layers import Input
 from keras.models import Model
-import os
+from keras import backend as K
+from keras.preprocessing.image import img_to_array
+import roi_helpers
 import config, pprint, pickle, random
 import resnet_rpn_loss_layer as nn
 from simple_parser import get_data
-from net_design_loss_layer import stage_2_net
+from net_design_loss_layer import stage_2_net_res
 
-def model_all(nb_classes, input_tensor, target_1st, target_2nd, height=80, width=40):
+def data_gen_train_merge():
+    return 0
+
+
+def model_all(nb_classes, cfg, input_tensor, target_1st, target_2nd, height=160, width=80):
     """
     把loss写成layer融进去网络之后，前后2阶段网络的端到端对接
     :param nb_classes: 
@@ -27,15 +38,29 @@ def model_all(nb_classes, input_tensor, target_1st, target_2nd, height=80, width
     """
     # 定义原1阶段的基础网络
     shared_layers = nn.nn_base(input_tensor, trainable=True) # resnet50的基础特征提取网络
-    num_anchors = 9  # 单个锚点的anchors生成数量
-    rpn_loss = nn.rpn(shared_layers, num_anchors, target_1st) # rpn网络分支输出
+    num_anchors = 9  # 单个锚点的anchors生成数量(源码固定为9)
+    [cls_layer, regr_layer] = nn.rpn(shared_layers, num_anchors, target_1st) # rpn网络分支输出
 
-    # 联合部分：难点
-    lianhe =
-
+    # 联合部分：
+    ## proposals回归
+    proposals = roi_helpers.rpn_to_roi(cls_layer, regr_layer, cfg, K.image_dim_ordering(), use_regr=True,
+                                                overlap_thresh=0.7,
+                                                max_boxes=5)
+    ## 坐标映射回原图
+    proposals[:, :] = 16 * proposals[:, :]
+    ## 接上input_tensor原图，在上面做Top-5的proposals的crop和resize，得到下一阶段的输入
+    width_mean = 80
+    height_mean = 160
+    input_tensor_cls = []
+    for j, prop in enumerate(proposals):
+        prop_crop = input_tensor.crop([prop[0]-7, prop[1]-15, prop[2]+7, prop[3]+15])
+        prop_crop = img_to_array(prop_crop)
+        prop_pic = cv2.resize(prop_crop, (width_mean, height_mean))  # 图片标准化resize
+        input_tensor_cls.append(prop_pic)
+    ##
     # 定义原2阶段的基础网络
-    classifier_loss = stage_2_net(nb_classes, Input(shape=(10, 20, 3)), target_2nd, height=80, width=40)
-    return classifier_loss
+    classification, bboxes_regression = stage_2_net_res(nb_classes, np.array(input_tensor_cls), target_2nd, height=160, width=80)
+    return [cls_layer, regr_layer], [classification, bboxes_regression]
 
 
 def train():
@@ -71,30 +96,46 @@ def train():
         pickle.dump(cfg, config_f)
         print('配置参数已写入：{},'.format(cfg.config_save_file))
 
-    # 定义输入网络的数据维度
+    # 定义输入网络的数据维度及部分参数
     img_input = Input(shape=(None, None, 3))
-    x_target = Input(shape=(None, 38, 67, 18))
-    y_target = Input(shape=(None, 38, 67, 72))
-    target_input1 = Input(shape=(None, 2400, 12))
-    target_input2 = Input(shape=(None, 2400, 80))
+    small_img_input = Input(shape=(160, 80, 3)) # 高为80，宽为40
+    nb_classes = len(classes_count)
+    # 定义输入网络的目标Y_true
+
 
     # 定义后续分类网络的输出
-    loss = model_all(len(classes_count), img_input, [x_target, y_target], [target_input1, target_input2], height=80, width=40)
-    model_merge = Model([img_input, [x_target, y_target], [target_input1, target_input2]], loss)
+    rpn_out, classifier_out = model_all(nb_classes, cfg, img_input, target_1st, target_2nd, height=160, width=80)
+    model_merge = Model([img_input, small_img_input], rpn_out + classifier_out)
 
     # 加载预训练模型参数
     print('\n======== 加载预训练模型参数 ========')
     try:
         print('loading weights from {}'.format(cfg.base_net_weights))
-        model_merge.load_weights(cfg.base_rpn_model_path, by_name=True)
+        model_merge.load_weights(cfg.base_model_path, by_name=True)
     except Exception as e:
         print(e)
         print('Could not load pretrained model weights. Weights can be found in the keras application folder '
           'https://github.com/fchollet/keras/tree/master/keras/applications')
 
     # 编译模型
-    optimizer = Adam(lr=1e-5)
+    optimizer = Adam(lr=1e-4)
     model_merge.compile(optimizer=optimizer,
                         loss=None,
                         metrics={'dense_class_{}'.format(len(classes_count)): 'accuracy'})
 
+    # 开始训练
+    ## 设置一些训练参数
+    epoch_length = 120
+    num_epochs = 3
+    losses = np.zeros((epoch_length, 5))
+    start_time = time.time()
+    best_loss = np.Inf
+    iter_num = 0
+    print('\n======== 开始训练 ========')
+    for epoch_num in range(num_epochs):
+        progbar = generic_utils.Progbar(epoch_length)
+        print('Epoch {}/{}'.format(epoch_num + 1, num_epochs))
+        n = 1
+        while True:
+            X, Y, img_data = next(data_gen_train_merge)
+            model_merge.train_on_batch(X, Y)

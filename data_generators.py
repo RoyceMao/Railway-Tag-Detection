@@ -291,12 +291,12 @@ def get_anchor_gt(all_img_data, C, img_length_calc_function, backend, mode='trai
                 x_img[:, :, 1] -= np.mean(x_img[:, :, 1])
                 x_img[:, :, 2] -= np.mean(x_img[:, :, 2])
 
+                # 把第二维后面的36个数乘以4（测试过程中会对应的除以4）[??? ]
                 x_img /= C.img_scaling_factor  # [??? 这个配置参数是什么意义]
                 x_img_2 /= C.img_scaling_factor
                 # x_img = np.transpose(x_img, (2, 0, 1)) # 顺时针翻转90度
                 x_img = np.expand_dims(x_img, axis=0)
                 x_img_2 = np.expand_dims(x_img_2, axis=0)
-                # 把第二维后面的36个数乘以4（测试过程中会对应的除以4）[??? ]
                 y_rpn_regr[:, y_rpn_regr.shape[1]//2:, :, :] *= C.std_scaling
 
                 if backend == 'tf':

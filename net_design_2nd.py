@@ -7,17 +7,10 @@ Created on 2018/11/7 10:34
 from __future__ import print_function
 from __future__ import absolute_import
 
-import warnings
-
 from keras.models import Model
 from keras.layers import Conv2D, Reshape, Input, Activation, Convolution2D, MaxPooling2D, ZeroPadding2D, Add, BatchNormalization, concatenate, Dense
 from fixed_batch_normalization import FixedBatchNormalization
-from keras.engine.topology import get_source_inputs
-from keras.utils import layer_utils
-from keras.utils.data_utils import get_file
 from keras import backend as K
-from keras_applications.resnet50 import identity_block, conv_block
-from roi_pooling_conv import RoiPoolingConv
 
 def stage_2_net(nb_classes, input_tensor, height=160, width=80):
     """
@@ -109,14 +102,12 @@ def stage_2_net_res(nb_classes, input_tensor, height = 160, width = 80):
     :return: 
     """
     bn_axis = 3
-    # resnet50基础网络部分
-    x = ZeroPadding2D(padding=(3, 3), name='conv1_zero')(input_tensor)
-    x = Conv2D(64, (7, 7),
-               strides=(2, 2),
-               padding='valid',
-               kernel_initializer='he_normal',
-               name='conv1_res')(x)
-    x = BatchNormalization(axis=bn_axis, name='bn_conv1_res')(x)
+    x = ZeroPadding2D((3, 3))(input_tensor)
+
+    x = Convolution2D(64, (7, 7), strides=(2, 2), name='conv1')(x)
+
+    # NOTE: this code only support to keras 2.0.3, newest version this line will got errors.
+    x = FixedBatchNormalization(axis=bn_axis, name='bn_conv1')(x)
     x = Activation('relu')(x)
     x = MaxPooling2D((3, 3), strides=(2, 2))(x)
 
@@ -141,7 +132,63 @@ def stage_2_net_res(nb_classes, input_tensor, height = 160, width = 80):
     # detect_model.summary()
     return [classification, bboxes_regression]
 
+def identity_block(input_tensor, kernel_size, filters, stage, block, trainable=True):
+    nb_filter1, nb_filter2, nb_filter3 = filters
 
+    if K.image_dim_ordering() == 'tf':
+        bn_axis = 3
+    else:
+        bn_axis = 1
+
+    conv_name_base = 'res' + str(stage) + block + '_branch'
+    bn_name_base = 'bn' + str(stage) + block + '_branch'
+
+    x = Convolution2D(nb_filter1, (1, 1), name=conv_name_base + '2a', trainable=trainable)(input_tensor)
+    x = FixedBatchNormalization(axis=bn_axis, name=bn_name_base + '2a')(x)
+    x = Activation('relu')(x)
+
+    x = Convolution2D(nb_filter2, (kernel_size, kernel_size), padding='same', name=conv_name_base + '2b',
+                      trainable=trainable)(x)
+    x = FixedBatchNormalization(axis=bn_axis, name=bn_name_base + '2b')(x)
+    x = Activation('relu')(x)
+
+    x = Convolution2D(nb_filter3, (1, 1), name=conv_name_base + '2c', trainable=trainable)(x)
+    x = FixedBatchNormalization(axis=bn_axis, name=bn_name_base + '2c')(x)
+
+    x = Add()([x, input_tensor])
+    x = Activation('relu')(x)
+    return x
+
+def conv_block(input_tensor, kernel_size, filters, stage, block, strides=(2, 2), trainable=True):
+    nb_filter1, nb_filter2, nb_filter3 = filters
+    if K.image_dim_ordering() == 'tf':
+        bn_axis = 3
+    else:
+        bn_axis = 1
+
+    conv_name_base = 'res' + str(stage) + block + '_branch'
+    bn_name_base = 'bn' + str(stage) + block + '_branch'
+
+    x = Convolution2D(nb_filter1, (1, 1), strides=strides, name=conv_name_base + '2a', trainable=trainable)(
+        input_tensor)
+    x = FixedBatchNormalization(axis=bn_axis, name=bn_name_base + '2a')(x)
+    x = Activation('relu')(x)
+
+    x = Convolution2D(nb_filter2, (kernel_size, kernel_size), padding='same', name=conv_name_base + '2b',
+                      trainable=trainable)(x)
+    x = FixedBatchNormalization(axis=bn_axis, name=bn_name_base + '2b')(x)
+    x = Activation('relu')(x)
+
+    x = Convolution2D(nb_filter3, (1, 1), name=conv_name_base + '2c', trainable=trainable)(x)
+    x = FixedBatchNormalization(axis=bn_axis, name=bn_name_base + '2c')(x)
+
+    shortcut = Convolution2D(nb_filter3, (1, 1), strides=strides, name=conv_name_base + '1', trainable=trainable)(
+        input_tensor)
+    shortcut = FixedBatchNormalization(axis=bn_axis, name=bn_name_base + '1')(shortcut)
+
+    x = Add()([x, shortcut])
+    x = Activation('relu')(x)
+    return x
 
 if __name__ == "__main__":
     # stage_2_net(11, Input(shape=(160, 80, 3)), height=160, width=80)
