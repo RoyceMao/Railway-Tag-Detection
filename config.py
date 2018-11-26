@@ -50,8 +50,9 @@ class Config:
         # https://github.com/fchollet/deep-learning-models/releases/download/v0.2/resnet50_weights_th_dim_ordering_th_kernels_notop.h5
         # https://github.com/fchollet/deep-learning-models/releases/download/v0.2/resnet50_weights_tf_dim_ordering_tf_kernels_notop.h5
 
-        self.model_path = 'model_trained/model_classifier.hdf5'
-        self.base_rpn_model_path = 'model_trained/resnet50_weights_tf_dim_ordering_tf_kernels_notop.h5' # 稍微过拟合的rpn模型，能较好地画出proposals
+        self.model_rpn_path = 'model_trained/model_rpn.hdf5'
+        self.model_cls_path = 'model_trained/model_classifier.hdf5'
+        self.base_rpn_model_path = 'model_trained/model_rpn.hdf5' # 稍微过拟合的rpn模型，能较好地画出proposals
         self.base_tf_model_path = 'model_trained/resnet50_weights_tf_dim_ordering_tf_kernels_notop.h5' # 原预训练模型
         self.base_model_path = 'model_trained/resnet50_weights_tf_dim_ordering_tf_kernels_notop.h5'
 

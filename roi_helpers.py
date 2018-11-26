@@ -258,7 +258,7 @@ def rpn_to_roi(rpn_layer, regr_layer, cfg, dim_ordering, use_regr=True, max_boxe
     anchor_sizes = cfg.anchor_box_scales  # [128, 256, 512]
     anchor_ratios = cfg.anchor_box_ratios  # [[1,1], [1,2], [2,1]]
 
-    assert rpn_layer.shape[0] == 1
+    # assert rpn_layer.shape[0] == 1
 
     if dim_ordering == 'th':
         (rows, cols) = rpn_layer.shape[2:]

@@ -27,7 +27,7 @@ mpl.use('agg')
 np.set_printoptions(threshold=np.inf) # 允许numpy数组的完全打印
 np.seterr(divide='ignore', invalid='ignore') # 不允许“divide”Warning相关信息的打印
 
-def data_gen_stage_2(result, img_data, sess, X, class_mapping, classes_count, iter_num, num_logistic):
+def data_gen_stage_2(result, img_data, X, class_mapping, classes_count, iter_num, num_logistic):
     """
     根据1阶段的一个batch（1张）图片处理结果，生成第2阶段的训练数据
     :param result: 
@@ -60,7 +60,7 @@ def data_gen_stage_2(result, img_data, sess, X, class_mapping, classes_count, it
                                np.array(annos_list[2])[np.newaxis, :], np.array(annos_list[3])[np.newaxis, :],
                                np.array(annos_list[4])[np.newaxis, :]), axis=0).T
     # 进行第2阶段所需参数的计算提取过程
-    rs_pic, rs_boxes, rs_num_gt_pic, rs_wh, gt_index = props_pic(sess, result[np.newaxis, :, :],
+    rs_pic, rs_boxes, rs_num_gt_pic, rs_wh, gt_index = props_pic(result[np.newaxis, :, :],
                                                                  [[x1_tag, y1_tag, x2_tag, y2_tag, cls_tag]],
                                                                  annos_np[np.newaxis, :, :], X[np.newaxis, :, :, :])
     # ==============================================================================
@@ -252,7 +252,6 @@ def train():
     # 解决tensorflow初始化参数内存占满的问题
     # config_tf = tf.ConfigProto()
     # config_tf.gpu_options.allow_growth = True
-    sess = tf.Session() # config=config_tf
     num_logistic = [0,0,0,0,0,0,0,0,0,0]
 
     print('\n======== 开始训练 ========')
@@ -284,7 +283,7 @@ def train():
                                                 overlap_thresh=0.7,
                                                 max_boxes=5)
                 # 训练2阶段的classifier
-                x, y, num_logistic = data_gen_stage_2(result, img_data, sess, X_2, class_mapping, classes_count, iter_num, num_logistic)
+                x, y, num_logistic = data_gen_stage_2(result, img_data, X_2, class_mapping, classes_count, iter_num, num_logistic)
                 loss_class = model_classifier.train_on_batch(x, y)
 
                 # 统计loss
@@ -338,7 +337,8 @@ def train():
                         if cfg.verbose:
                             print('Total loss decreased from {} to {}, saving weights'.format(best_loss, curr_loss))
                         best_loss = curr_loss
-                        model_classifier.save_weights(cfg.model_path)
+                        model_rpn.save_weights(cfg.model_rpn_path)
+                        model_classifier.save_weights(cfg.model_cls_path)
 
                     break
     print(num_logistic)

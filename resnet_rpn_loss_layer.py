@@ -19,7 +19,7 @@ from keras.layers import Input, Add, Dense, Activation, Flatten, Convolution2D, 
     AveragePooling2D, TimeDistributed, Lambda
 
 from keras import backend as K
-from losses import rpn_loss_cls, rpn_loss_regr
+from losses_loss_layer import rpn_loss_cls, rpn_loss_regr
 from roi_pooling_conv import RoiPoolingConv
 from fixed_batch_normalization import FixedBatchNormalization
 
@@ -155,7 +155,7 @@ def nn_base(input_tensor=None, trainable=False):
 
 
 
-def rpn(base_layers, num_anchors, x_target):
+def rpn(base_layers, num_anchors, x_target_cls, x_target_regr):
     x = Convolution2D(512, (3, 3), padding='same', activation='relu', kernel_initializer='normal', name='rpn_conv1')(
         base_layers)
 
@@ -164,7 +164,7 @@ def rpn(base_layers, num_anchors, x_target):
     x_regr = Convolution2D(num_anchors * 4, (1, 1), activation='linear', kernel_initializer='zero',
                            name='rpn_out_regress')(x)
 
-    x_loss_cls = Lambda(rpn_loss_cls(num_anchors), name='x_cls_loss')([x_target[0], x_class])
-    x_loss_regr = Lambda(rpn_loss_regr(num_anchors), name='x_regr_loss')([x_target[1], x_regr])
+    x_loss_cls = Lambda(lambda x: rpn_loss_cls(*x), name='x_cls_loss')([x_target_cls, x_class])
+    x_loss_regr = Lambda(lambda x: rpn_loss_regr(*x), name='x_regr_loss')([x_target_regr, x_regr])
 
-    return [x_class, x_regr]
+    return [x_class, x_regr], [x_loss_cls, x_loss_regr]

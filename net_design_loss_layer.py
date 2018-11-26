@@ -11,7 +11,7 @@ from keras.models import Model
 from keras.layers import Conv2D, Reshape, Lambda, Activation, Convolution2D, MaxPooling2D, ZeroPadding2D, Add, BatchNormalization, concatenate, Dense
 from fixed_batch_normalization import FixedBatchNormalization
 from keras import backend as K
-from losses import class_loss_cls, class_loss_regr
+from losses_loss_layer import class_loss_cls, class_loss_regr
 
 def stage_2_net(nb_classes, input_tensor, height=160, width=80):
     """
@@ -95,7 +95,7 @@ def stage_2_net_vgg(nb_classes, input_tensor, height = 160, width = 80):
     # detect_model.summary()
     return [classification, bboxes_regression]
 
-def stage_2_net_res(nb_classes, input_tensor, input_target, height = 160, width = 80):
+def stage_2_net_res(nb_classes, input_tensor, input_target_cls, input_target_regr, height = 160, width = 80):
     """
     resnet网络的前2个blocks，8倍下采样
     :param input_tensor: 
@@ -136,13 +136,13 @@ def stage_2_net_res(nb_classes, input_tensor, input_target, height = 160, width 
     # 如：
     #    target_input1 = Input(shape=(5, 2400, 12))
     #    target_input2 = Input(shape=(5, 2400, 80))
-    loss_cls = Lambda(class_loss_cls, name='cls_loss')([input_target[0], classification])
-    loss_regr = Lambda(class_loss_regr(nb_classes - 1), name='regr_loss')([input_target[1], bboxes_regression])
+    loss_cls = Lambda(lambda x: class_loss_cls(*x), name='cls_loss')([input_target_cls, classification])
+    loss_regr = Lambda(lambda x: class_loss_regr(*x), name='regr_loss')([input_target_regr, bboxes_regression])
 
-    # detect_model = Model(inputs=input_tensor, outputs=[classification, bboxes_regression])
+    # detect_model = Model(inputs=input_tensor, outputs=[loss_cls, loss_regr])
     # detect_model.summary()
 
-    return classification, bboxes_regression
+    return [loss_cls, loss_regr], [classification, bboxes_regression]
 
 def identity_block(input_tensor, kernel_size, filters, stage, block, trainable=True):
     nb_filter1, nb_filter2, nb_filter3 = filters

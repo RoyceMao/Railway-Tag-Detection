@@ -14,7 +14,7 @@ from keras.preprocessing.image import img_to_array
 import cv2
 import numpy as np
 
-def props_pic(sess, proposals, all_tag_annos, all_num_annos, all_imgs):
+def props_pic(proposals, all_tag_annos, all_num_annos, all_imgs):
     """
     RPN网络生成的proposals映射回原图，并修正crop区域含有的小数字坐标，进行第2阶段的输入训练。
     :param proposals: （batch_size，num_rois，4）
