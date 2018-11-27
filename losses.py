@@ -60,29 +60,29 @@ def rpn_loss_cls(num_anchors):
 
     return rpn_loss_cls_fixed_num
 
-def class_loss_cls(y_true, y_pred):
+def class_loss_cls(y_true, y_pred): # td网络都增加了一维（3->4维度），注意修改
     """
     计算分类网络的分类误差
     :param y_true: ground truth, shape(1,selected boxes,21)
     :param y_pred: 预测类别得分, shape(1,selected boxes,21)
     :return:
     """
-    return lambda_cls_class * K.sum(y_true[:, :, 0] * K.categorical_crossentropy(y_true[:, :, 1:], y_pred[:, :, :])) / K.sum(epsilon + y_true[:, :, 0])
+    return lambda_cls_class * K.sum(y_true[:, :, :, 0] * K.categorical_crossentropy(y_true[:, :, :, 1:], y_pred[:, :, :, :])) / K.sum(epsilon + y_true[:, :, :, 0])
 
 def class_loss_regr(num_classes):
     """
     计算分类网络的回归误差
     """
-    def class_loss_regr_fixed_num(y_true, y_pred):
+    def class_loss_regr_fixed_num(y_true, y_pred): # td网络都增加了一维（3->4维度），注意修改
         """
         计算分类网络的回归误差
         :param y_true: ground truth, shape(1,selected boxes,160)
         :param y_pred: 预测的回归系数, shape(1,selected boxes,80)
         :return:
         """
-        x = y_true[:, :, 4*num_classes:] - y_pred
+        x = y_true[:, :, :, 4*num_classes:] - y_pred
         x_abs = K.abs(x)
         x_bool = K.cast(K.less_equal(x_abs, 1.0), 'float32')
-        return lambda_cls_regr * K.sum(y_true[:, :, :4*num_classes] * (x_bool * (0.5 * x * x) + (1 - x_bool) * (x_abs - 0.5))) / K.sum(epsilon + y_true[:, :, :4*num_classes])
+        return lambda_cls_regr * K.sum(y_true[:, :, :, :4*num_classes] * (x_bool * (0.5 * x * x) + (1 - x_bool) * (x_abs - 0.5))) / K.sum(epsilon + y_true[:, :, :, :4*num_classes])
     return class_loss_regr_fixed_num
 

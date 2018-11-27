@@ -21,13 +21,13 @@ from simple_parser import get_data
 from props_pic_2nd import props_pic
 from Visual import _create_unique_color_float, _create_unique_color_uchar, draw_boxes_and_label_on_image
 from anchor_2nd import anchors_generation, sliding_anchors_all, pos_neg_iou, anchor_targets_bbox
-from net_design_2nd import stage_2_net_res
+from net_design_2nd import stage_2_net_res_td
 import matplotlib as mpl
 mpl.use('agg')
 np.set_printoptions(threshold=np.inf) # 允许numpy数组的完全打印
 np.seterr(divide='ignore', invalid='ignore') # 不允许“divide”Warning相关信息的打印
 
-def data_gen_stage_2(result, img_data, X, class_mapping, classes_count, iter_num, num_logistic):
+def data_gen_stage_2(result, img_data, X, class_mapping, classes_count, iter_num, all_anchors, num_logistic):
     """
     根据1阶段的一个batch（1张）图片处理结果，生成第2阶段的训练数据
     :param result: 
@@ -67,9 +67,6 @@ def data_gen_stage_2(result, img_data, X, class_mapping, classes_count, iter_num
     # 生成第二阶段的训练数据
     # ==============================================================================
     batch_size = len(rs_pic[0])  # 一次5张crops图
-    base_anchors = anchors_generation(16, [0.5 ** (1.0 / 3.0), 1, 2 ** (1.0 / 3.0)],
-                                      [0.5, 0.5 ** (1.0 / 2.0), 1, 2 ** (1.0 / 3.0), 2 ** (1.0 / 2.0), 2])
-    all_anchors = sliding_anchors_all((10, 20), (8, 8), base_anchors)
     #================================================================
     '''
     # 测试部分：计算当前anchor与当前gt-box的iou，以及框住gt的proposals生成的anchors是否覆盖了所有的小gt
@@ -144,7 +141,7 @@ def data_gen_stage_2(result, img_data, X, class_mapping, classes_count, iter_num
     y2 = np.concatenate([np.repeat(labels_batch[:, :, :(len(classes_count) - 1)], 4, axis=2), tmp], axis=2)
     del x1_tag,y1_tag,x2_tag,y2_tag,cls_tag,annos_list,annos_np,rs_pic,rs_boxes,rs_num_gt_pic,rs_wh,gt_index,labels_batch,regression_batch,boxes_batch,inds,pos_inds,tmp
     gc.collect()
-    return np.array(x1), [y1,y2], num_logistic
+    return np.array(x1)[np.newaxis, :, :, :, :], [y1[np.newaxis, :, :, :],y2[np.newaxis, :, :, :]], num_logistic
 
 
 def train():
@@ -201,8 +198,8 @@ def train():
         input_shape_img = (None, None, 3)
 
     img_input = Input(shape=input_shape_img)
-    small_img_input = Input(shape=(160, 80, 3)) # 高为80，宽为40
-
+    small_img_input = Input(shape=(None, 160, 80, 3)) # 高为80，宽为40
+    anchors_input = Input(shape=(None, 4))
     # 定义基础网络
     shared_layers = nn.nn_base(img_input, trainable=True)
 
@@ -210,8 +207,13 @@ def train():
     num_anchors = len(cfg.anchor_box_scales) * len(cfg.anchor_box_ratios)  # 9
     rpn = nn.rpn(shared_layers, num_anchors)
 
+    # 定义anchors
+    base_anchors = anchors_generation(16, [0.5 ** (1.0 / 3.0), 1, 2 ** (1.0 / 3.0)],
+                                      [0.5, 0.5 ** (1.0 / 2.0), 1, 2 ** (1.0 / 3.0), 2 ** (1.0 / 2.0), 2])
+    all_anchors = sliding_anchors_all((10, 20), (8, 8), base_anchors)
+
     # 定义后续分类网络的输出
-    classifier = stage_2_net_res(len(classes_count), small_img_input, height=160, width=80)
+    classifier = stage_2_net_res_td(len(classes_count), small_img_input, anchors_input, height=160, width=80)
 
     model_rpn = Model(img_input, rpn[:2])
     model_classifier = Model(small_img_input, classifier)
@@ -283,7 +285,7 @@ def train():
                                                 overlap_thresh=0.7,
                                                 max_boxes=5)
                 # 训练2阶段的classifier
-                x, y, num_logistic = data_gen_stage_2(result, img_data, X_2, class_mapping, classes_count, iter_num, num_logistic)
+                x, y, num_logistic = data_gen_stage_2(result, img_data, X_2, class_mapping, classes_count, iter_num, all_anchors, num_logistic)
                 loss_class = model_classifier.train_on_batch(x, y)
 
                 # 统计loss

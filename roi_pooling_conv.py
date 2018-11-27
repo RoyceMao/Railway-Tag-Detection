@@ -65,17 +65,18 @@ class RoiPoolingConv(Layer):
             w = rois[0, roi_idx, 2]
             h = rois[0, roi_idx, 3]
             
-            row_length = w / float(self.pool_size)
-            col_length = h / float(self.pool_size)
+            row_length = w / float(self.pool_size[0])
+            col_length = h / float(self.pool_size[1])
 
-            num_pool_regions = self.pool_size
+            num_pool_regions_w = self.pool_size[0]
+            num_pool_regions_h = self.pool_size[1]
 
             # NOTE: the RoiPooling implementation differs between theano and tensorflow due to the lack of a resize op
             # in theano. The theano implementation is much less efficient and leads to long compile times
 
             if self.dim_ordering == 'th':
-                for jy in range(num_pool_regions):
-                    for ix in range(num_pool_regions):
+                for jy in range(num_pool_regions_h):
+                    for ix in range(num_pool_regions_w):
                         x1 = x + ix * row_length
                         x2 = x1 + row_length
                         y1 = y + jy * col_length
@@ -103,11 +104,11 @@ class RoiPoolingConv(Layer):
                 w = K.cast(w, 'int32')
                 h = K.cast(h, 'int32')
 
-                rs = tf.image.resize_images(img[:, y:y+h, x:x+w, :], (self.pool_size, self.pool_size))
+                rs = tf.image.resize_images(img[:, y:y+h, x:x+w, :], (self.pool_size[1], self.pool_size[0]))
                 outputs.append(rs)
 
         final_output = K.concatenate(outputs, axis=0)
-        final_output = K.reshape(final_output, (1, self.num_rois, self.pool_size, self.pool_size, self.nb_channels))
+        final_output = K.reshape(final_output, (1, self.num_rois, self.pool_size[1], self.pool_size[0], self.nb_channels))
 
         if self.dim_ordering == 'th':
             final_output = K.permute_dimensions(final_output, (0, 1, 4, 2, 3))

@@ -8,8 +8,9 @@ from __future__ import print_function
 from __future__ import absolute_import
 
 from keras.models import Model
-from keras.layers import Conv2D, Reshape, Input, Activation, Convolution2D, MaxPooling2D, ZeroPadding2D, Add, BatchNormalization, concatenate, Dense
+from keras.layers import Conv2D, Reshape, Input, Activation, Convolution2D, MaxPooling2D, ZeroPadding2D, Add, BatchNormalization, concatenate, TimeDistributed, AveragePooling2D, Flatten, Dense
 from fixed_batch_normalization import FixedBatchNormalization
+from roi_pooling_conv import RoiPoolingConv
 from keras import backend as K
 
 def stage_2_net(nb_classes, input_tensor, height=160, width=80):
@@ -90,8 +91,8 @@ def stage_2_net_vgg(nb_classes, input_tensor, height = 160, width = 80):
     bboxes_regression = Convolution2D(filters=height * width * 18 * 4 // 1280, kernel_size=3, padding='same')(x)
     bboxes_regression = Reshape(target_shape=(-1, 4*(nb_classes-1)), name='regression')(bboxes_regression)
 
-    # detect_model = Model(inputs=input_tensor, outputs=[classification, bboxes_regression])
-    # detect_model.summary()
+    detect_model = Model(inputs=input_tensor, outputs=[classification, bboxes_regression])
+    detect_model.summary()
     return [classification, bboxes_regression]
 
 def stage_2_net_res(nb_classes, input_tensor, height = 160, width = 80):
@@ -130,6 +131,52 @@ def stage_2_net_res(nb_classes, input_tensor, height = 160, width = 80):
 
     # detect_model = Model(inputs=input_tensor, outputs=[classification, bboxes_regression])
     # detect_model.summary()
+    return [classification, bboxes_regression]
+
+
+def stage_2_net_res_td(nb_classes, input_tensor, input_rois, height = 160, width = 80):
+    """
+    resnet网络的前2个blocks，8倍下采样，并增加TimeDistributed层
+    :param nb_classes: 
+    :param input_tensor: 
+    :param height: 
+    :param width: 
+    :return: 
+    """
+    bn_axis = 3
+    # 输入td结构部分的input_shape应该满足，与RoiPoolingConv输出一致
+    input_shape = (height * width * 18 // 64, 20, 10, 64)
+    x = ZeroPadding2D((3, 3))(input_tensor)
+    x = Convolution2D(64, (7, 7), strides=(2, 2), name='conv1')(x)
+    # NOTE: this code only support to keras 2.0.3, newest version this line will got errors.
+    x = FixedBatchNormalization(axis=bn_axis, name='bn_conv1')(x)
+    x = Activation('relu')(x)
+    x = MaxPooling2D((2, 2), name='max_pool')(x)
+    # 新增部分结构，roi pooling的特征映射（anchors与img之间）
+    x = RoiPoolingConv([10, 20], height * width * 18 // 64)([x, input_rois])
+    x = conv_block_td(x, 3, [64, 64, 256], stage=1, block='a', input_shape=input_shape, strides=(1, 1))
+    x = identity_block_td(x, 3, [64, 64, 256], stage=1, block='b')
+    x = identity_block_td(x, 3, [64, 64, 256], stage=1, block='c')
+    # 新增部分结构
+    # x = TimeDistributed(AveragePooling2D((2, 2)), name='avg_pool')(x)
+    out = TimeDistributed(Flatten())(x)
+
+    classification = TimeDistributed(Dense(nb_classes, activation='softmax', kernel_initializer='zero'),
+                                name='dense_class_{}'.format(nb_classes))(out)
+    # note: no regression target for bg class
+    bboxes_regression = TimeDistributed(Dense(4 * (nb_classes - 1), activation='linear', kernel_initializer='zero'),
+                               name='dense_regress_{}'.format(nb_classes))(out)
+    '''
+    # cls and regr 分类回归分支
+    classification = TimeDistributed(Convolution2D(filters=height * width * 18 * nb_classes  // 12800, kernel_size=3, padding='same'))(x)
+    classification = TimeDistributed(Reshape(target_shape=(-1, nb_classes)))(classification)
+    classification = Activation(activation='softmax', name='classification')(classification)
+    # 接上regr输出层
+    bboxes_regression = TimeDistributed(Convolution2D(filters=height * width * 18 * 4 // 1280, kernel_size=3, padding='same'))(x)
+    bboxes_regression = TimeDistributed(Reshape(target_shape=(-1, 4*(nb_classes-1))), name='regression')(bboxes_regression)
+    '''
+    detect_model = Model(inputs=input_tensor, outputs=[classification, bboxes_regression])
+    detect_model.summary()
     return [classification, bboxes_regression]
 
 def identity_block(input_tensor, kernel_size, filters, stage, block, trainable=True):
@@ -190,7 +237,75 @@ def conv_block(input_tensor, kernel_size, filters, stage, block, strides=(2, 2),
     x = Activation('relu')(x)
     return x
 
+def identity_block_td(input_tensor, kernel_size, filters, stage, block, trainable=True):
+    # identity block time distributed
+
+    nb_filter1, nb_filter2, nb_filter3 = filters
+    if K.image_dim_ordering() == 'tf':
+        bn_axis = 3
+    else:
+        bn_axis = 1
+
+    conv_name_base = 'res' + str(stage) + block + '_branch'
+    bn_name_base = 'bn' + str(stage) + block + '_branch'
+
+    x = TimeDistributed(Convolution2D(nb_filter1, (1, 1), trainable=trainable, kernel_initializer='normal'),
+                        name=conv_name_base + '2a')(input_tensor)
+    x = TimeDistributed(FixedBatchNormalization(axis=bn_axis), name=bn_name_base + '2a')(x)
+    x = Activation('relu')(x)
+
+    x = TimeDistributed(
+        Convolution2D(nb_filter2, (kernel_size, kernel_size), trainable=trainable, kernel_initializer='normal',
+                      padding='same'), name=conv_name_base + '2b')(x)
+    x = TimeDistributed(FixedBatchNormalization(axis=bn_axis), name=bn_name_base + '2b')(x)
+    x = Activation('relu')(x)
+
+    x = TimeDistributed(Convolution2D(nb_filter3, (1, 1), trainable=trainable, kernel_initializer='normal'),
+                        name=conv_name_base + '2c')(x)
+    x = TimeDistributed(FixedBatchNormalization(axis=bn_axis), name=bn_name_base + '2c')(x)
+
+    x = Add()([x, input_tensor])
+    x = Activation('relu')(x)
+
+    return x
+
+def conv_block_td(input_tensor, kernel_size, filters, stage, block, input_shape, strides=(2, 2), trainable=True):
+    # conv block time distributed
+
+    nb_filter1, nb_filter2, nb_filter3 = filters
+    if K.image_dim_ordering() == 'tf':
+        bn_axis = 3
+    else:
+        bn_axis = 1
+
+    conv_name_base = 'res' + str(stage) + block + '_branch'
+    bn_name_base = 'bn' + str(stage) + block + '_branch'
+
+    x = TimeDistributed(
+        Convolution2D(nb_filter1, (1, 1), strides=strides, trainable=trainable, kernel_initializer='normal'),
+        input_shape=input_shape, name=conv_name_base + '2a')(input_tensor)
+    x = TimeDistributed(FixedBatchNormalization(axis=bn_axis), name=bn_name_base + '2a')(x)
+    x = Activation('relu')(x)
+
+    x = TimeDistributed(Convolution2D(nb_filter2, (kernel_size, kernel_size), padding='same', trainable=trainable,
+                                      kernel_initializer='normal'), name=conv_name_base + '2b')(x)
+    x = TimeDistributed(FixedBatchNormalization(axis=bn_axis), name=bn_name_base + '2b')(x)
+    x = Activation('relu')(x)
+
+    x = TimeDistributed(Convolution2D(nb_filter3, (1, 1), kernel_initializer='normal'), name=conv_name_base + '2c',
+                        trainable=trainable)(x)
+    x = TimeDistributed(FixedBatchNormalization(axis=bn_axis), name=bn_name_base + '2c')(x)
+
+    shortcut = TimeDistributed(
+        Convolution2D(nb_filter3, (1, 1), strides=strides, trainable=trainable, kernel_initializer='normal'),
+        name=conv_name_base + '1')(input_tensor)
+    shortcut = TimeDistributed(FixedBatchNormalization(axis=bn_axis), name=bn_name_base + '1')(shortcut)
+
+    x = Add()([x, shortcut])
+    x = Activation('relu')(x)
+    return x
+
 if __name__ == "__main__":
     # stage_2_net(11, Input(shape=(160, 80, 3)), height=160, width=80)
     # stage_2_net_vgg(11, Input(shape=(160, 80, 3)), height=160, width=80)
-    stage_2_net_res(11, Input(shape=(160, 80, 3)), height=160, width=80)
+    stage_2_net_res_td(11, Input(shape=(160, 80, 3)), Input(shape=(None, 4)), height=160, width=80)
