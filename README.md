@@ -1,11 +1,11 @@
 # 铁路交通号码牌小数字目标检测与识别
-<br><br>
+<br>
 ## 环境
    * Python 3.6.4
    * Keras 2.0
 ## 检测效果
 ![](https://github.com/RoyceMao/Railway-Tag-Detection/blob/master/img/aug_3_012.png)
-![](https://github.com/RoyceMao/Railway-Tag-Detection/tree/master/img/EG1.png) ![](https://github.com/RoyceMao/Railway-Tag-Detection/tree/master/img/EG2.png)
+![](https://github.com/RoyceMao/Railway-Tag-Detection/blob/master/img/EG1.png) ![](https://github.com/RoyceMao/Railway-Tag-Detection/blob/master/img/EG2.png)
 ## 设计思路
 考虑到拍摄图片清晰度欠佳，而且小数字号码牌在图片中的占比非常低，这里采取2阶段端到端（end2end）的方式构建检测网络：<br>
 1）首先，第1阶段的特征提取加RPN类似于Fasterrcnn，生成前景概率得分最佳的Top-5 proposals（一般50%有号码牌目标，50%没有）
@@ -20,7 +20,8 @@ loss_regr = Lambda(lambda x: class_loss_regr(*x), name='regr_loss')([input_targe
 ```
 
 ## 数据集
-<img src="https://github.com/RoyceMao/Railway-Tag-Detection/tree/master/img/avatar1.jpg" width="150" height="150" alt="数据集"/>
+<img src="https://github.com/RoyceMao/Railway-Tag-Detection/blob/master/img/1.jpg" width="150" height="150" alt="数据集"/>
+
 ## 训练
 
 ```
