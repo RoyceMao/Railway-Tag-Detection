@@ -8,7 +8,7 @@
 <img src="https://github.com/RoyceMao/Railway-Tag-Detection/blob/master/img/EG1.png" width="80" height="160"/> <img src="https://github.com/RoyceMao/Railway-Tag-Detection/blob/master/img/EG2.png" width="80" height="160"/>
 ## 设计思路
 考虑到拍摄图片清晰度欠佳，而且小数字号码牌在图片中的占比非常低，这里采取2阶段端到端（end2end）的方式构建检测网络：<br>
-1）首先，第1阶段的特征提取加RPN类似于Fasterrcnn，生成前景概率得分最佳的Top-5 proposals（一般50%有号码牌目标，50%没有）
+1）首先，第1阶段的特征提取加RPN类似于Fasterrcnn，生成前景概率得分最佳的Top-5 proposals（一般50%有号码牌目标，50%没有）<br>
 2）然后，根据该正负proposals样本，做特征映射与裁剪crop，进行第2阶段的anchors、特征提取、小数字检测识别过程
 ## loss封装到layer
 自定义loss并封装到第1阶段的[class,regression]输出，跳过交替式训练的中间prediction过程，实现完全end2end，提高训练效率
