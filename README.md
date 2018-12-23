@@ -5,7 +5,7 @@
    * Keras 2.0
 ## 检测效果
 ![](https://github.com/RoyceMao/Railway-Tag-Detection/blob/master/img/aug_3_012.png)
-![](https://github.com/RoyceMao/Railway-Tag-Detection/blob/master/img/EG1.png) ![](https://github.com/RoyceMao/Railway-Tag-Detection/blob/master/img/EG2.png)
+<img src="https://github.com/RoyceMao/Railway-Tag-Detection/blob/master/img/EG1.png" width="80" height="160"/> <img src="https://github.com/RoyceMao/Railway-Tag-Detection/blob/master/img/EG2.png" width="80" height="160"/>
 ## 设计思路
 考虑到拍摄图片清晰度欠佳，而且小数字号码牌在图片中的占比非常低，这里采取2阶段端到端（end2end）的方式构建检测网络：<br>
 1）首先，第1阶段的特征提取加RPN类似于Fasterrcnn，生成前景概率得分最佳的Top-5 proposals（一般50%有号码牌目标，50%没有）
