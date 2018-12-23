@@ -4,12 +4,12 @@
    * Python 3.6.4
    * Keras 2.0
 ## 检测效果
-<img src="https://github.com/HeTingwei/ReadmeLearn/blob/master/avatar1.jpg" width="150" height="150" alt="第2阶段"/>
-<img src="https://github.com/HeTingwei/ReadmeLearn/blob/master/avatar1.jpg" width="150" height="150" alt="第1阶段"/>
+![](https://github.com/RoyceMao/Railway-Tag-Detection/blob/master/img/aug_3_012.png)
+![](https://github.com/RoyceMao/Railway-Tag-Detection/tree/master/img/EG1.png) ![](https://github.com/RoyceMao/Railway-Tag-Detection/tree/master/img/EG2.png)
 ## 设计思路
 考虑到拍摄图片清晰度欠佳，而且小数字号码牌在图片中的占比非常低，这里采取2阶段端到端（end2end）的方式构建检测网络：<br>
-1）首先，第1阶段的特征提取加RPN类似于Fasterrcnn，生成前景概率得分最佳的Top-5 proposals（一般50%有号码牌目标，50%没有）；
-2）然后，根据该正负proposals样本，做特征映射与裁剪crop，进行第2阶段的anchors、特征提取、小数字检测识别过程。
+1）首先，第1阶段的特征提取加RPN类似于Fasterrcnn，生成前景概率得分最佳的Top-5 proposals（一般50%有号码牌目标，50%没有）
+2）然后，根据该正负proposals样本，做特征映射与裁剪crop，进行第2阶段的anchors、特征提取、小数字检测识别过程
 ## loss封装到layer
 自定义loss并封装到第1阶段的[class,regression]输出，跳过交替式训练的中间prediction过程，实现完全end2end，提高训练效率
 
@@ -20,7 +20,7 @@ loss_regr = Lambda(lambda x: class_loss_regr(*x), name='regr_loss')([input_targe
 ```
 
 ## 数据集
-<img src="https://github.com/HeTingwei/ReadmeLearn/blob/master/avatar1.jpg" width="150" height="150" alt="数据集"/>
+<img src="https://github.com/RoyceMao/Railway-Tag-Detection/tree/master/img/avatar1.jpg" width="150" height="150" alt="数据集"/>
 ## 训练
 
 ```
